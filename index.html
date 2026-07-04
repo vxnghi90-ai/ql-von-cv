@@ -1722,24 +1722,40 @@ const DEFAULT_CAPITAL_SOURCES = [
       let tongLaiPhatSinh = 0;
       let laiThangChuan30Ngay = 0;
 
+      const contractPayments = (state.payments || []).filter(p => p.MaHopDong === contract.MaHopDong);
+      const laiPayments = contractPayments.filter(p => p.LoaiThanhToan === 'Trả lãi')
+        .sort((a, b) => (b.NgayThanhToan || '').localeCompare(a.NgayThanhToan || ''));
+      const isFirstCycle = laiPayments.length === 0;
+
+      const ngayTinhLaiStr = contract.NgayBatDauTinhLai || contract.NgayVay;
+      const extraDays = calculateStandardDays(contract.NgayVay, ngayTinhLaiStr);
+      const extraLai = extraDays > 0 ? Math.round((contract.SoTienVay / 1000000) * (contract.LaiNgayTrenTrieu || 0) * extraDays) : 0;
+      const baseMonth30 = Math.round((contract.SoTienVay / 1000000) * (contract.LaiNgayTrenTrieu || 0) * 30);
+
       if (contract.LoaiHopDong === 'LaiCoDinhNgay') {
         tongLaiPhatSinh = Number(contract.SoLaiCoDinh || 0);
         laiThangChuan30Ngay = Number(contract.SoLaiCoDinh || 0);
       } else {
-        const ngayTinhLaiStr = contract.NgayBatDauTinhLai || contract.NgayVay;
-        const extraDays = calculateStandardDays(contract.NgayVay, ngayTinhLaiStr);
-        const extraLai = extraDays > 0 ? Math.round((contract.SoTienVay / 1000000) * contract.LaiNgayTrenTrieu * extraDays) : 0;
-        const daysFromTinhLai = calculateStandardDays(ngayTinhLaiStr, endCalStr);
-        const regularLai = Math.round((contract.SoTienVay / 1000000) * contract.LaiNgayTrenTrieu * daysFromTinhLai);
-        tongLaiPhatSinh = regularLai + extraLai;
-        laiThangChuan30Ngay = Math.round((contract.SoTienVay / 1000000) * (contract.LaiNgayTrenTrieu || 0) * 30);
+        // Lãi tháng chuẩn / Lãi kỳ này:
+        // Nếu ở kỳ đầu và có ngày xin lùi (extraDays > 0): Lãi tháng đầu = Lãi 30d + Lãi chênh lùi
+        if (isFirstCycle && extraDays > 0) {
+          laiThangChuan30Ngay = baseMonth30 + extraLai;
+        } else {
+          laiThangChuan30Ngay = baseMonth30;
+        }
+
+        // Tính tổng lãi phát sinh:
+        if (isFirstCycle) {
+          // Tháng đầu chưa đóng: Tổng lãi phải đóng của kỳ 1 = 30 ngày chuẩn + số ngày chênh lùi
+          tongLaiPhatSinh = baseMonth30 + extraLai;
+        } else {
+          const daysFromTinhLai = calculateStandardDays(ngayTinhLaiStr, endCalStr);
+          const regularLai = Math.round((contract.SoTienVay / 1000000) * (contract.LaiNgayTrenTrieu || 0) * daysFromTinhLai);
+          tongLaiPhatSinh = regularLai + extraLai;
+        }
       }
 
-      const contractPayments = state.payments.filter(p => p.MaHopDong === contract.MaHopDong);
-      const laiPayments = contractPayments.filter(p => p.LoaiThanhToan === 'Trả lãi')
-        .sort((a, b) => (b.NgayThanhToan || '').localeCompare(a.NgayThanhToan || ''));
       const ngayDongLaiGanNhat = laiPayments.length > 0 ? laiPayments[0].NgayThanhToan : null;
-
       const laiDaTra = contractPayments.filter(p => p.LoaiThanhToan === 'Trả lãi').reduce((sum, p) => sum + Number(p.SoTienTra) + (Number(p.TienKhuyenMai) || 0), 0);
       const gocDaTra = contractPayments.filter(p => p.LoaiThanhToan === 'Tất toán').reduce((sum, p) => sum + Number(p.SoTienTra), 0);
       const laiConNo = Math.max(0, tongLaiPhatSinh - laiDaTra);
@@ -1749,14 +1765,14 @@ const DEFAULT_CAPITAL_SOURCES = [
       const lichSuNguon = contract.LichSuNguon || [{ NgayBatDau: contract.NgayVay, NgayKetThuc: null, MaNguon: contract.MaNguon, SoTien: contract.SoTienVay }];
       lichSuNguon.forEach(seg => {
         const segDays = calculateStandardDays(seg.NgayBatDau, seg.NgayKetThuc ? seg.NgayKetThuc : endCalStr);
-        const source = state.capitalSources.find(s => s.MaNguon === seg.MaNguon) || { LaiSuatThang: 0 };
+        const source = (state.capitalSources || []).find(s => s.MaNguon === seg.MaNguon) || { LaiSuatThang: 0 };
         chiPhiVonLuyKe += Math.round(seg.SoTien * (source.LaiSuatThang / 100) * (segDays / 30));
       });
 
       let chiPhiVonDaTra = 0;
       if (tongLaiPhatSinh > 0) chiPhiVonDaTra = Math.round(laiDaTra * (chiPhiVonLuyKe / tongLaiPhatSinh));
       const activeSeg = lichSuNguon.find(s => s.NgayKetThuc === null) || { MaNguon: contract.MaNguon };
-      const activeSource = state.capitalSources.find(s => s.MaNguon === activeSeg.MaNguon) || { TenNguon: "N/A", LaiSuatThang: 0 };
+      const activeSource = (state.capitalSources || []).find(s => s.MaNguon === activeSeg.MaNguon) || { TenNguon: "N/A", LaiSuatThang: 0 };
 
       return {
         soNgayVay,
@@ -1773,7 +1789,9 @@ const DEFAULT_CAPITAL_SOURCES = [
         activeMaNguon: activeSeg.MaNguon,
         lichSuNguon,
         laiThangChuan30Ngay,
-        ngayDongLaiGanNhat
+        ngayDongLaiGanNhat,
+        extraDays,
+        extraLai
       };
     }
 
@@ -3969,19 +3987,21 @@ const DEFAULT_CAPITAL_SOURCES = [
             }
           }
 
-          rows += `<tr class="border-t ${rowBgClass} transition-colors">
-            <td class="p-2 font-mono text-xs text-slate-400 text-center font-bold">${idx + 1}</td>
-            <td class="p-2 font-bold text-slate-800 text-xs">${contract.MaHopDong}</td>
-            <td class="p-2 font-semibold text-slate-900 text-xs">${custName}</td>
-            <td class="p-2 text-slate-600 text-xs">${formatDate(contract.NgayVay)}</td>
-            <td class="p-2 text-slate-600 text-xs">${formatDate(calc.ngayDongLaiGanNhat)}</td>
-            <td class="p-2 text-xs font-bold">${formatDate(contract.NgayDaoHan)}${warningTag}</td>
-            <td class="p-2 text-right font-extrabold text-slate-900 text-xs">${formatVND(calc.duNoGocHienTai)}</td>
-            <td class="p-2">${timeline}</td>
-            <td class="p-2 text-right font-bold text-emerald-700 text-xs">${formatVND(calc.laiThangChuan30Ngay)}</td>
-            <td class="p-2 text-right font-extrabold text-rose-600 text-xs">${formatVND(calc.laiConNo)}</td>
-            <td class="p-2 text-center"><button onclick="window.openPaymentModal && window.openPaymentModal('${contract.MaHopDong}')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold">Thu</button><button onclick="window.openContractModal && window.openContractModal('${contract.MaHopDong}')" class="text-indigo-600 hover:text-indigo-800 font-semibold ml-1 text-xs">Sửa</button><button onclick="window.handleDeleteContract && window.handleDeleteContract('${contract.MaHopDong}')" class="text-rose-600 hover:text-rose-800 font-semibold ml-1 text-xs">Xóa</button></td>
-          </tr>`;
+            const extraTag = (calc.extraDays > 0 && calc.laiDaTra === 0) ? `<div class="text-[9px] text-amber-600 font-bold">(gồm ${calc.extraDays}d chênh ${formatVND(calc.extraLai)})</div>` : '';
+
+            rows += `<tr class="border-t ${rowBgClass} transition-colors">
+              <td class="p-2 font-mono text-xs text-slate-400 text-center font-bold">${idx + 1}</td>
+              <td class="p-2 font-bold text-slate-800 text-xs">${contract.MaHopDong}</td>
+              <td class="p-2 font-semibold text-slate-900 text-xs">${custName}</td>
+              <td class="p-2 text-slate-600 text-xs">${formatDate(contract.NgayVay)}</td>
+              <td class="p-2 text-slate-600 text-xs">${formatDate(calc.ngayDongLaiGanNhat)}</td>
+              <td class="p-2 text-xs font-bold">${formatDate(contract.NgayDaoHan)}${warningTag}</td>
+              <td class="p-2 text-right font-extrabold text-slate-900 text-xs">${formatVND(calc.duNoGocHienTai)}</td>
+              <td class="p-2">${timeline}</td>
+              <td class="p-2 text-right font-bold text-emerald-700 text-xs">${formatVND(calc.laiThangChuan30Ngay)}${extraTag}</td>
+              <td class="p-2 text-right font-extrabold text-rose-600 text-xs">${formatVND(calc.laiConNo)}</td>
+              <td class="p-2 text-center"><button onclick="window.openPaymentModal && window.openPaymentModal('${contract.MaHopDong}')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold">Thu</button><button onclick="window.openContractModal && window.openContractModal('${contract.MaHopDong}')" class="text-indigo-600 hover:text-indigo-800 font-semibold ml-1 text-xs">Sửa</button><button onclick="window.handleDeleteContract && window.handleDeleteContract('${contract.MaHopDong}')" class="text-rose-600 hover:text-rose-800 font-semibold ml-1 text-xs">Xóa</button></td>
+            </tr>`;
         });
         mainContentHTML = `<div class="bg-white rounded-2xl border border-slate-100 overflow-x-auto shadow-sm"><table class="w-full text-sm text-left"><thead><tr class="bg-slate-50 border-b text-slate-400 font-bold"><th class="p-2 uppercase text-xs">STT</th><th class="p-2 uppercase">Mã HĐ</th><th class="p-2 uppercase text-xs">Khách Hàng <span class="inline-block align-middle">${khFilterHTML}</span></th><th class="p-2 uppercase text-xs">Ngày vay</th><th class="p-2 uppercase text-xs">TT gần nhất</th><th class="p-2 uppercase text-xs">Đến hạn</th><th class="p-2 text-right uppercase">Số vay</th><th class="p-2 uppercase">Timeline nguồn vốn (tự chia)</th><th class="p-2 text-right uppercase text-xs">Lãi 1 tháng (30d)</th><th class="p-2 text-right uppercase">Lãi còn nợ</th><th class="p-2 text-center uppercase">Thao tác</th></tr></thead><tbody>${rows}</tbody></table></div>`;
       }
