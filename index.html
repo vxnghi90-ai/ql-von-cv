@@ -3551,19 +3551,22 @@ const DEFAULT_CAPITAL_SOURCES = [
               warningTag = `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 ml-1">⏳ Còn ${status.daysDiff} ngày</span>`;
             }
           }
-            <td class="p-2 font-bold text-slate-900">${contract.MaHopDong}${badge}</td>
-            <td class="p-2 font-semibold text-slate-700">${cust ? cust.TenKhachHang : ''}</td>
-            <td class="p-2 text-xs">${formatDate(contract.NgayVay)}</td>
-            <td class="p-2 text-xs">${lastPayDate ? formatDate(lastPayDate) : '-'}</td>
-            <td class="p-2 text-xs">${dueCell}</td>
-            <td class="p-2 font-bold text-slate-800 text-right">${formatVND(contract.SoTienVay)}</td>
-            <td class="p-2"><div class="max-w-[160px] p-1 border rounded bg-slate-50 text-[9px]">${timeline}</div></td>
-            <td class="p-2 text-right font-semibold text-amber-600">${formatVND(laiMotThang30)}${sug.isFirst ? ' <span class="text-[9px] text-indigo-600">(kỳ đầu)</span>' : ''}</td>
-            <td class="p-2 text-rose-600 font-bold text-right">${formatVND(calc.laiConNo)}</td>
+
+          rows += `<tr class="border-t ${rowBgClass} transition-colors">
+            <td class="p-2 font-mono text-xs text-slate-400 text-center font-bold">${idx + 1}</td>
+            <td class="p-2 font-bold text-slate-800 text-xs">${contract.MaHopDong}</td>
+            <td class="p-2 font-semibold text-slate-900 text-xs">${custName}</td>
+            <td class="p-2 text-slate-600 text-xs">${formatDate(contract.NgayVay)}</td>
+            <td class="p-2 text-slate-600 text-xs">${formatDate(calc.ngayDongLaiGanNhat)}</td>
+            <td class="p-2 text-xs font-bold">${formatDate(contract.NgayDaoHan)}${warningTag}</td>
+            <td class="p-2 text-right font-extrabold text-slate-900 text-xs">${formatVND(calc.duNoGocHienTai)}</td>
+            <td class="p-2">${timeline}</td>
+            <td class="p-2 text-right font-bold text-emerald-700 text-xs">${formatVND(calc.laiThangChuan30Ngay)}</td>
+            <td class="p-2 text-right font-extrabold text-rose-600 text-xs">${formatVND(calc.laiConNo)}</td>
             <td class="p-2 text-center"><button onclick="window.openPaymentModal && window.openPaymentModal('${contract.MaHopDong}')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold">Thu</button><button onclick="window.openContractModal && window.openContractModal('${contract.MaHopDong}')" class="text-indigo-600 hover:text-indigo-800 font-semibold ml-1 text-xs">Sửa</button><button onclick="window.handleDeleteContract && window.handleDeleteContract('${contract.MaHopDong}')" class="text-rose-600 hover:text-rose-800 font-semibold ml-1 text-xs">Xóa</button></td>
           </tr>`;
         });
-        mainContentHTML = `<div class="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm"><table class="w-full text-sm text-left"><thead><tr class="bg-slate-50 border-b text-slate-400 font-bold"><th class="p-2 uppercase text-xs">STT</th><th class="p-2 uppercase">Mã HĐ</th><th class="p-2 uppercase text-xs">Khách Hàng <span class="inline-block align-middle">${khFilterHTML}</span></th><th class="p-2 uppercase text-xs">Ngày vay</th><th class="p-2 uppercase text-xs">TT gần nhất</th><th class="p-2 uppercase text-xs">Đến hạn</th><th class="p-2 text-right uppercase">Số vay</th><th class="p-2 uppercase">Timeline nguồn vốn (tự chia)</th><th class="p-2 text-right uppercase text-xs">Lãi 1 tháng (30d)</th><th class="p-2 text-right uppercase">Lãi còn nợ</th><th class="p-2 text-center uppercase">Thao tác</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+        mainContentHTML = `<div class="bg-white rounded-2xl border border-slate-100 overflow-x-auto shadow-sm"><table class="w-full text-sm text-left"><thead><tr class="bg-slate-50 border-b text-slate-400 font-bold"><th class="p-2 uppercase text-xs">STT</th><th class="p-2 uppercase">Mã HĐ</th><th class="p-2 uppercase text-xs">Khách Hàng <span class="inline-block align-middle">${khFilterHTML}</span></th><th class="p-2 uppercase text-xs">Ngày vay</th><th class="p-2 uppercase text-xs">TT gần nhất</th><th class="p-2 uppercase text-xs">Đến hạn</th><th class="p-2 text-right uppercase">Số vay</th><th class="p-2 uppercase">Timeline nguồn vốn (tự chia)</th><th class="p-2 text-right uppercase text-xs">Lãi 1 tháng (30d)</th><th class="p-2 text-right uppercase">Lãi còn nợ</th><th class="p-2 text-center uppercase">Thao tác</th></tr></thead><tbody>${rows}</tbody></table></div>`;
       }
       else if (state.activeTab === 'payments') {
         let rows = '';
