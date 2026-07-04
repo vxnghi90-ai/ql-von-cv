@@ -4992,6 +4992,25 @@ const DEFAULT_CAPITAL_SOURCES = [
       if (c) c.innerHTML = `<div style="padding:20px;color:red;font-weight:bold;">Lỗi nạp cục bản: ${e.message}</div>`;
     }
 
+    // Service Worker Auto-Update & Cache Purge for iOS/Safari
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('./sw.js').then(function(reg) {
+          reg.onupdatefound = function() {
+            var installingWorker = reg.installing;
+            if (installingWorker) {
+              installingWorker.onstatechange = function() {
+                if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  console.log('New SW version installed, reloading page...');
+                  window.location.reload();
+                }
+              };
+            }
+          };
+        }).catch(function(e){ console.log('SW Reg error:', e); });
+      });
+    }
+
     // Safety net for stuck loader (pure offline) - multiple attempts + broad detection
     function forceStartIfStuck() {
       try {
@@ -5002,17 +5021,17 @@ const DEFAULT_CAPITAL_SOURCES = [
                          html.indexOf('spin 1s linear infinite') !== -1 ||
                          html.indexOf('Hệ thống đang nạp dữ liệu an toàn offline') !== -1;
         if (looksStuck) {
-          if (state.isUnlocked) {
-            renderApp();
+          if (typeof renderApp === 'function') {
+            try { renderApp(); } catch(e) { initSecurityAndLoad(); }
           } else {
             initSecurityAndLoad();
           }
         }
       } catch(err) {}
     }
-    setTimeout(forceStartIfStuck, 1200);
-    setTimeout(forceStartIfStuck, 2500);
-    setTimeout(forceStartIfStuck, 4500);
+    setTimeout(forceStartIfStuck, 600);
+    setTimeout(forceStartIfStuck, 1500);
+    setTimeout(forceStartIfStuck, 3000);
   </script>
 
 
