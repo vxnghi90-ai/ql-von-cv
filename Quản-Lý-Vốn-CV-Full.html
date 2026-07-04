@@ -1760,28 +1760,7 @@ const DEFAULT_CAPITAL_SOURCES = [
       const gocDaTra = contractPayments.filter(p => p.LoaiThanhToan === 'Tất toán').reduce((sum, p) => sum + Number(p.SoTienTra), 0);
       const duNoGocHienTai = Math.max(0, contract.SoTienVay - gocDaTra);
 
-      // CÁCH TÍNH LÃI CÒN NỢ CHUẨN DÀNH CHO TIỆM CẦM ĐỒ / CHO VAY:
-      // 1. Khi chưa từng đóng (isFirstCycle): Lãi còn nợ = Số tiền phải đóng kỳ 1 (tongLaiPhatSinh).
-      // 2. Khi đã đóng lãi cho kỳ gần nhất và đang trong kỳ mới (chưa tới ngày NgayDaoHan tiếp theo): Lãi còn nợ = 0 đ.
-      // 3. Khi tới/quá hạn (today >= NgayDaoHan): Lãi còn nợ = Tổng phát sinh - Đã trả.
-      let laiConNo = 0;
-      if (contract.TrangThai === 'Đang vay') {
-        const daoDate = contract.NgayDaoHan ? new Date(contract.NgayDaoHan) : null;
-        if (daoDate) daoDate.setHours(0,0,0,0);
-
-        if (isFirstCycle) {
-          laiConNo = Math.max(0, tongLaiPhatSinh - laiDaTra);
-        } else if (daoDate && today < daoDate) {
-          const rawUnpaid = tongLaiPhatSinh - laiDaTra;
-          if (rawUnpaid < laiThangChuan30Ngay) {
-            laiConNo = 0;
-          } else {
-            laiConNo = Math.max(0, rawUnpaid);
-          }
-        } else {
-          laiConNo = Math.max(0, tongLaiPhatSinh - laiDaTra);
-        }
-      }
+      const laiConNo = Math.max(0, tongLaiPhatSinh - laiDaTra);
 
       let chiPhiVonLuyKe = 0;
       const lichSuNguon = contract.LichSuNguon || [{ NgayBatDau: contract.NgayVay, NgayKetThuc: null, MaNguon: contract.MaNguon, SoTien: contract.SoTienVay }];
