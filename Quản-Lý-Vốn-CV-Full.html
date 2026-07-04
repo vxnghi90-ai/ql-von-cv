@@ -1720,9 +1720,11 @@ const DEFAULT_CAPITAL_SOURCES = [
       
       let soNgayVay = calculateStandardDays(contract.NgayVay, endCalStr);
       let tongLaiPhatSinh = 0;
+      let laiThangChuan30Ngay = 0;
 
       if (contract.LoaiHopDong === 'LaiCoDinhNgay') {
         tongLaiPhatSinh = Number(contract.SoLaiCoDinh || 0);
+        laiThangChuan30Ngay = Number(contract.SoLaiCoDinh || 0);
       } else {
         const ngayTinhLaiStr = contract.NgayBatDauTinhLai || contract.NgayVay;
         const extraDays = calculateStandardDays(contract.NgayVay, ngayTinhLaiStr);
@@ -1730,9 +1732,14 @@ const DEFAULT_CAPITAL_SOURCES = [
         const daysFromTinhLai = calculateStandardDays(ngayTinhLaiStr, endCalStr);
         const regularLai = Math.round((contract.SoTienVay / 1000000) * contract.LaiNgayTrenTrieu * daysFromTinhLai);
         tongLaiPhatSinh = regularLai + extraLai;
+        laiThangChuan30Ngay = Math.round((contract.SoTienVay / 1000000) * (contract.LaiNgayTrenTrieu || 0) * 30);
       }
 
       const contractPayments = state.payments.filter(p => p.MaHopDong === contract.MaHopDong);
+      const laiPayments = contractPayments.filter(p => p.LoaiThanhToan === 'Trả lãi')
+        .sort((a, b) => (b.NgayThanhToan || '').localeCompare(a.NgayThanhToan || ''));
+      const ngayDongLaiGanNhat = laiPayments.length > 0 ? laiPayments[0].NgayThanhToan : null;
+
       const laiDaTra = contractPayments.filter(p => p.LoaiThanhToan === 'Trả lãi').reduce((sum, p) => sum + Number(p.SoTienTra) + (Number(p.TienKhuyenMai) || 0), 0);
       const gocDaTra = contractPayments.filter(p => p.LoaiThanhToan === 'Tất toán').reduce((sum, p) => sum + Number(p.SoTienTra), 0);
       const laiConNo = Math.max(0, tongLaiPhatSinh - laiDaTra);
@@ -1751,7 +1758,23 @@ const DEFAULT_CAPITAL_SOURCES = [
       const activeSeg = lichSuNguon.find(s => s.NgayKetThuc === null) || { MaNguon: contract.MaNguon };
       const activeSource = state.capitalSources.find(s => s.MaNguon === activeSeg.MaNguon) || { TenNguon: "N/A", LaiSuatThang: 0 };
 
-      return { soNgayVay, tongLaiPhatSinh, laiDaTra, gocDaTra, laiConNo, duNoGocHienTai, chiPhiVonLuyKe, chiPhiVonDaTra, laQuaHan: contract.TrangThai === 'Đang vay' && contract.NgayDaoHan && today > new Date(contract.NgayDaoHan), nguonVon: activeSource.TenNguon, laiSuatDauVao: activeSource.LaiSuatThang, activeMaNguon: activeSeg.MaNguon, lichSuNguon };
+      return {
+        soNgayVay,
+        tongLaiPhatSinh,
+        laiDaTra,
+        gocDaTra,
+        laiConNo,
+        duNoGocHienTai,
+        chiPhiVonLuyKe,
+        chiPhiVonDaTra,
+        laQuaHan: contract.TrangThai === 'Đang vay' && contract.NgayDaoHan && today > new Date(contract.NgayDaoHan),
+        nguonVon: activeSource.TenNguon,
+        laiSuatDauVao: activeSource.LaiSuatThang,
+        activeMaNguon: activeSeg.MaNguon,
+        lichSuNguon,
+        laiThangChuan30Ngay,
+        ngayDongLaiGanNhat
+      };
     }
 
     function calculateAvailableCapital(sourceId = null, editingContractId = null) {
@@ -1826,24 +1849,25 @@ const DEFAULT_CAPITAL_SOURCES = [
     }
 
     function getContractWarningStatus(contract) {
-      if (contract.TrangThai !== 'Đang vay') return { type: 'normal', label: '', cls: '', daysDiff: null };
+      if (contract.TrangThai !== 'Đang vay') return { type: 'normal', label: '', cls: '', daysDiff: null, absDays: 0 };
       const today = new Date();
       today.setHours(0,0,0,0);
-      if (!contract.NgayDaoHan) return { type: 'normal', label: '', cls: '', daysDiff: null };
+      if (!contract.NgayDaoHan) return { type: 'normal', label: '', cls: '', daysDiff: null, absDays: 0 };
       const dao = new Date(contract.NgayDaoHan);
       dao.setHours(0,0,0,0);
       const diff = Math.ceil((dao - today) / (1000*3600*24));
+      const absDays = Math.abs(diff);
       if (diff < 0) {
-        return { type: 'overdue', label: `Quá hạn ${Math.abs(diff)} ngày`, cls: 'bg-rose-100 text-rose-800 font-semibold', daysDiff: diff };
+        return { type: 'overdue', label: `Quá hạn ${absDays} ngày`, cls: 'bg-rose-100 text-rose-800 font-semibold', daysDiff: diff, absDays: absDays };
       }
       if (diff === 0) {
-        return { type: 'due', label: 'Đến hạn hôm nay', cls: 'bg-orange-100 text-orange-800 font-semibold', daysDiff: 0 };
+        return { type: 'due_today', label: 'Đến hạn hôm nay', cls: 'bg-orange-100 text-orange-800 font-semibold', daysDiff: 0, absDays: 0 };
       }
       if (diff <= 3) {
-        return { type: 'soon', label: `Còn ${diff} ngày`, cls: 'bg-amber-100 text-amber-800 font-semibold', daysDiff: diff };
+        return { type: 'due_soon', label: `Còn ${diff} ngày`, cls: 'bg-amber-100 text-amber-800 font-semibold', daysDiff: diff, absDays: absDays };
       }
       // For normal upcoming, no big badge in MÃ HĐ (to avoid clutter), but daysDiff is available for the ĐẾN HẠN column
-      return { type: 'normal', label: '', cls: '', daysDiff: diff };
+      return { type: 'normal', label: '', cls: '', daysDiff: diff, absDays: absDays };
     }
 
     // === TỰ ĐỘNG MÃ HỢP ĐỒNG HDVT0001, HDVT0002... ===
@@ -1880,10 +1904,10 @@ const DEFAULT_CAPITAL_SOURCES = [
       state.contracts.forEach(c => {
         if (c.TrangThai !== 'Đang vay') return;
 
-        // Tìm các giao dịch trả lãi của hợp đồng này, sắp xếp từ cũ nhất đến mới nhất
-        const cPayments = state.payments
+        // Tìm các giao dịch trả lãi của hợp đồng này, sắp xếp từ cũ nhất đến mới nhất theo KyLaiDen hoặc NgayThanhToan
+        const cPayments = (state.payments || [])
           .filter(p => p.MaHopDong === c.MaHopDong && p.LoaiThanhToan === 'Trả lãi')
-          .sort((a, b) => a.NgayThanhToan.localeCompare(b.NgayThanhToan));
+          .sort((a, b) => (a.KyLaiDen || a.NgayThanhToan || '').localeCompare(b.KyLaiDen || b.NgayThanhToan || ''));
 
         if (cPayments.length === 0) {
           // Nếu chưa có giao dịch trả lãi nào, kỳ hạn đáo hạn ban đầu phải là Ngày Vay + 30 ngày
@@ -1891,7 +1915,7 @@ const DEFAULT_CAPITAL_SOURCES = [
             const start = new Date(c.NgayVay);
             start.setDate(start.getDate() + 30);
             const expectedDaoHan = start.toISOString().split('T')[0];
-            if (c.NgayDaoHan !== expectedDaoHan && !c.NgayDaoHan) {
+            if (c.NgayDaoHan !== expectedDaoHan) {
               c.NgayDaoHan = expectedDaoHan;
               changed = true;
             }
@@ -1899,25 +1923,25 @@ const DEFAULT_CAPITAL_SOURCES = [
           return;
         }
 
-        // Bắt đầu tính từ ngày vay gốc
-        let baseDate = new Date(c.NgayVay);
-        if (isNaN(baseDate.getTime())) return;
+        // Lấy giao dịch trả lãi mới nhất (kỳ đóng gần nhất)
+        const latestPay = cPayments[cPayments.length - 1];
+        const closeDateStr = latestPay.KyLaiDen || latestPay.NgayThanhToan;
+        let baseDate = new Date(closeDateStr);
+        if (isNaN(baseDate.getTime())) {
+          baseDate = new Date(latestPay.NgayThanhToan);
+        }
 
-        cPayments.forEach(p => {
-          // Ưu tiên dùng KyLaiDen (ngày đóng lãi đã điều chỉnh) nếu có, fallback NgayThanhToan
-          const closeStr = p.KyLaiDen || p.NgayThanhToan;
-          // Luôn tiến thêm 30 ngày cho mỗi giao dịch trả lãi (từ close của kỳ)
-          baseDate.setDate(baseDate.getDate() + 30);
+        // Ngày đáo hạn tiếp theo = Kỳ đóng gần nhất + 30 ngày
+        baseDate.setDate(baseDate.getDate() + 30);
 
-          // Nếu ngày đóng tiền muộn hơn kỳ hạn, tiếp tục tịnh tiến các chu kỳ 30 ngày
-          const payDate = new Date(closeStr || p.NgayThanhToan);
-          if (!isNaN(payDate.getTime())) {
-            payDate.setHours(0, 0, 0, 0);
-            while (baseDate < payDate) {
-              baseDate.setDate(baseDate.getDate() + 30);
-            }
+        // Nếu ngày thực nộp sau hạn đó, tịnh tiến thêm các chu kỳ 30 ngày
+        const payDate = new Date(latestPay.NgayThanhToan);
+        if (!isNaN(payDate.getTime())) {
+          payDate.setHours(0, 0, 0, 0);
+          while (baseDate < payDate) {
+            baseDate.setDate(baseDate.getDate() + 30);
           }
-        });
+        }
 
         const calculatedNgayDaoHan = baseDate.toISOString().split('T')[0];
         if (c.NgayDaoHan !== calculatedNgayDaoHan) {
@@ -2372,6 +2396,7 @@ const DEFAULT_CAPITAL_SOURCES = [
 
       executeSave('payments', newPayment.MaThanhToan, newPayment, () => {
         state.payments.unshift(newPayment);
+        recalculateAllDueDates();
         window.closeModal('quick-pos-modal');
         showNotification(`⚡ POS: Đã thu ${formatVND(amt)} cho hợp đồng ${maHD}!`);
         if (window.renderApp) window.renderApp();
