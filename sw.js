@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ql-von-cv-v9';
+const CACHE_NAME = 'ql-von-cv-v10';
 const urlsToCache = [
   './',
   './index.html',
@@ -40,18 +40,35 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch event - serve from cache, fallback to network
+// Fetch event - Network-First for HTML documents, Cache-First for static assets
 self.addEventListener('fetch', (event) => {
-  // Skip cross-origin requests
   if (!event.request.url.startsWith(self.location.origin)) {
     return;
   }
 
+  // Network-First for HTML/page navigation so code updates apply instantly
+  if (event.request.mode === 'navigate' || (event.request.headers.get('accept') && event.request.headers.get('accept').includes('text/html'))) {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+          }
+          return networkResponse;
+        })
+        .catch(() => {
+          return caches.match(event.request).then((cached) => cached || caches.match('./index.html'));
+        })
+    );
+    return;
+  }
+
+  // Cache-First for static assets
   event.respondWith(
     caches.match(event.request)
       .then((cachedResponse) => {
         if (cachedResponse) {
-          // Return cached version, but update in background
           event.waitUntil(
             fetch(event.request).then((networkResponse) => {
               if (networkResponse && networkResponse.status === 200) {
@@ -64,13 +81,11 @@ self.addEventListener('fetch', (event) => {
           return cachedResponse;
         }
 
-        // Not in cache, fetch from network
         return fetch(event.request).then((networkResponse) => {
           if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
             return networkResponse;
           }
 
-          // Cache the new response
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(event.request, responseToCache);
@@ -78,7 +93,6 @@ self.addEventListener('fetch', (event) => {
 
           return networkResponse;
         }).catch(() => {
-          // Offline fallback - return the main page if navigation fails
           if (event.request.mode === 'navigate') {
             return caches.match('./index.html');
           }
@@ -87,7 +101,7 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Listen for messages from the app (e.g., for manual update)
+// Listen for messages from the app
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
