@@ -784,6 +784,22 @@ const DEFAULT_CAPITAL_SOURCES = [
       ],
       "LaiSuatThang": 1.7,
       "TenNguon": "Vay Ngân Hàng VPBank"
+    },
+    {
+      "MaNguon": "GOP_VON",
+      "GhiChu": "Vốn góp đối tác kinh doanh",
+      "LichSuBienDong": [
+        {
+          "Ngay": "2026-06-01",
+          "SoTien": 0,
+          "NoiDung": "Khởi tạo"
+        }
+      ],
+      "LaiSuatThang": 0,
+      "PhanTramChiaLai": 50,
+      "PhamViChiaLai": "TatCa",
+      "HopDongLoaiTru": [],
+      "TenNguon": "Tiền Đối Tác"
     }
   ];
 
@@ -1958,7 +1974,35 @@ const DEFAULT_CAPITAL_SOURCES = [
       stats.loiNhuanRongThucTe = stats.tongLaiThucThu - stats.tongChiPhiLaiNguon;
       stats.tongThieuHutPhaiBu = Object.values(stats.sourceDetails).reduce((sum, item) => sum + item.thieuHut, 0);
 
-      stats.laiDoiTac = Math.round(stats.loiNhuanRongThucTe / 2);
+      // TÍNH LÃI ĐỐI TÁC THEO TỈ LỆ VÀ PHẠM VI HỢP ĐỒNG CỦA NGUỒN VỐN "TIỀN ĐỐI TÁC"
+      let partnerSrc = state.capitalSources.find(s => s.MaNguon === 'GOP_VON' || s.MaNguon === 'TIEN_DOI_TAC' || (s.TenNguon || '').toLowerCase().includes('đối tác')) || state.capitalSources.find(s => s.PhanTramChiaLai !== undefined);
+
+      const phanTramChia = (partnerSrc && partnerSrc.PhanTramChiaLai !== undefined && partnerSrc.PhanTramChiaLai !== null) ? Number(partnerSrc.PhanTramChiaLai) : 50;
+      const phamViChia = (partnerSrc && partnerSrc.PhamViChiaLai) ? partnerSrc.PhamViChiaLai : 'TatCa';
+      const loaiTruList = (partnerSrc && Array.isArray(partnerSrc.HopDongLoaiTru)) ? partnerSrc.HopDongLoaiTru : [];
+
+      let tongLaiThucThuDoiTac = 0;
+      if (phamViChia === 'LoaiTru' && loaiTruList.length > 0) {
+        state.payments.forEach(p => {
+          if (p.LoaiThanhToan === 'Trả lãi' && (p.TrangThaiThu === 'DaNop' || !p.TrangThaiThu)) {
+            if (!loaiTruList.includes(p.MaHopDong)) {
+              tongLaiThucThuDoiTac += Number(p.SoTienTra || 0);
+            }
+          }
+        });
+      } else {
+        tongLaiThucThuDoiTac = stats.tongLaiThucThu;
+      }
+
+      const loiNhuanRongDoiTac = Math.max(0, tongLaiThucThuDoiTac - stats.tongChiPhiLaiNguon);
+
+      stats.phanTramChiaLaiDoiTac = phanTramChia;
+      stats.phamViChiaLaiDoiTac = phamViChia;
+      stats.danhSachLoaiTruDoiTac = loaiTruList;
+      stats.tongLaiThucThuDoiTac = tongLaiThucThuDoiTac;
+      stats.loiNhuanRongDoiTac = loiNhuanRongDoiTac;
+
+      stats.laiDoiTac = Math.round(loiNhuanRongDoiTac * (phanTramChia / 100));
       stats.soLaiDoiTacDaRut = (state.partnerWithdrawals || []).reduce((sum, w) => sum + Number(w.SoTien || 0), 0);
       stats.soLaiDoiTacConLai = stats.laiDoiTac - stats.soLaiDoiTacDaRut;
 
@@ -2059,10 +2103,33 @@ const DEFAULT_CAPITAL_SOURCES = [
 
     function handleSaveCapitalSource(e) {
       e.preventDefault(); const form = e.target;
-      const data = { MaNguon: form.MaNguon.value.toUpperCase().replace(/\s+/g, '_'), TenNguon: form.TenNguon.value.trim(), LaiSuatThang: Number(form.LaiSuatThang.value), GhiChu: form.GhiChu.value.trim() };
+      const maNguon = form.MaNguon.value.toUpperCase().replace(/\s+/g, '_');
+      const phanTramChia = form.PhanTramChiaLai ? Number(form.PhanTramChiaLai.value) : 50;
+      const phamViChia = form.PhamViChiaLai ? form.PhamViChiaLai.value : 'TatCa';
+      
+      const excludedBoxes = form.querySelectorAll('input[name="HopDongLoaiTru"]:checked');
+      const hopDongLoaiTru = Array.from(excludedBoxes).map(cb => cb.value);
+
+      const data = { 
+        MaNguon: maNguon, 
+        TenNguon: form.TenNguon.value.trim(), 
+        LaiSuatThang: Number(form.LaiSuatThang.value), 
+        GhiChu: form.GhiChu.value.trim(),
+        PhanTramChiaLai: phanTramChia,
+        PhamViChiaLai: phamViChia,
+        HopDongLoaiTru: hopDongLoaiTru
+      };
+
       executeSave('capital_sources', data.MaNguon, data, () => {
-        if (state.editingCapitalSource) { state.capitalSources = state.capitalSources.map(s => s.MaNguon === data.MaNguon ? { ...s, ...data } : s); showNotification(`Cập nhật nguồn vốn thành công`); } 
-        else { if (state.capitalSources.some(s => s.MaNguon === data.MaNguon)) return showAlert("Lỗi", "Mã nguồn đã tồn tại!"); data.LichSuBienDong = [{ Ngay: new Date().toISOString().split('T')[0], SoTien: 0, NoiDung: "Khởi tạo tài khoản nguồn" }]; state.capitalSources.push(data); showNotification(`Thêm tài khoản nguồn thành công`); }
+        if (state.editingCapitalSource) { 
+          state.capitalSources = state.capitalSources.map(s => s.MaNguon === data.MaNguon ? { ...s, ...data } : s); 
+          showNotification(`Cập nhật nguồn vốn thành công`); 
+        } else { 
+          if (state.capitalSources.some(s => s.MaNguon === data.MaNguon)) return showAlert("Lỗi", "Mã nguồn đã tồn tại!"); 
+          data.LichSuBienDong = [{ Ngay: new Date().toISOString().split('T')[0], SoTien: 0, NoiDung: "Khởi tạo tài khoản nguồn" }]; 
+          state.capitalSources.push(data); 
+          showNotification(`Thêm tài khoản nguồn thành công`); 
+        }
       });
       state.editingCapitalSource = null; closeModal('capital-source-modal');
     }
@@ -2474,7 +2541,8 @@ const DEFAULT_CAPITAL_SOURCES = [
       const statsObj = getStats();
       const tongRutLai = (state.interestWithdrawals || []).reduce((sum, w) => sum + Number(w.SoTien || 0), 0);
       const tienLaiThuc = statsObj.loiNhuanRongThucTe;
-      const tongLaiConThucTe = tienLaiThuc - tongRutLai;
+      const laiDoiTac = statsObj.laiDoiTac || 0;
+      const tongLaiConThucTe = tienLaiThuc - laiDoiTac - tongRutLai;
       
       if (amount > tongLaiConThucTe) {
         return showAlert("Lỗi", "Số tiền rút vượt quá số lãi còn thực tế khả dụng!");
@@ -2687,7 +2755,8 @@ const DEFAULT_CAPITAL_SOURCES = [
       const statsObj = getStats();
       const tongRutLai = (state.interestWithdrawals || []).reduce((sum, w) => sum + Number(w.SoTien || 0), 0);
       const tienLaiThuc = statsObj.loiNhuanRongThucTe;
-      const tongLaiConThucTe = tienLaiThuc - tongRutLai;
+      const laiDoiTac = statsObj.laiDoiTac || 0;
+      const tongLaiConThucTe = tienLaiThuc - laiDoiTac - tongRutLai;
       const staffPending = state.payments.filter(p => p.TrangThaiThu === 'NhanVienGiu');
 
       let warningHTML = '';
@@ -2760,7 +2829,8 @@ const DEFAULT_CAPITAL_SOURCES = [
       if (state.activeTab === 'dashboard') {
         const tongRutLai = (state.interestWithdrawals || []).reduce((sum, w) => sum + Number(w.SoTien || 0), 0);
         const tienLaiThuc = statsObj.loiNhuanRongThucTe;
-        const tongLaiConThucTe = tienLaiThuc - tongRutLai;
+        const laiDoiTac = statsObj.laiDoiTac || 0;
+        const tongLaiConThucTe = tienLaiThuc - laiDoiTac - tongRutLai;
 
         // Calendar computation for due dates - placed early so it can be referenced in the dashboard HTML string higher up
         const calSection = (() => {
@@ -3093,7 +3163,7 @@ const DEFAULT_CAPITAL_SOURCES = [
                   <div class="mt-3 text-3xl lg:text-[28px] font-black text-amber-700 tracking-tighter">${formatVND(tongLaiConThucTe)}</div>
                 </div>
                 <div class="mt-2 pt-2 border-t border-amber-100 flex items-center justify-between">
-                  <span class="text-xs font-medium text-amber-600">Tổng lãi thực tế chưa rút</span>
+                  <span class="text-xs font-medium text-amber-600">Đã trừ Lãi ĐT (${formatVND(laiDoiTac)}) & Đã rút</span>
                   <button onclick="window.openWithdrawInterestModal && window.openWithdrawInterestModal()" class="text-xs bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-1.5 rounded-2xl flex items-center gap-1 transition-colors">
                     <span>💸</span> Rút ngay
                   </button>
@@ -3172,10 +3242,14 @@ const DEFAULT_CAPITAL_SOURCES = [
             <div class="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-4">
               <div class="flex-1">
                 <h4 class="font-extrabold text-base text-amber-700 flex items-center gap-2">
-                  🤝 QUẢN LÝ LÃI ĐỐI TÁC (50% Tiền Lãi Thực)
+                  🤝 QUẢN LÝ LÃI ĐỐI TÁC (${statsObj.phanTramChiaLaiDoiTac ?? 50}% Tiền Lãi Thực)
                 </h4>
-                <p class="text-xs text-slate-600 mt-1">Hệ thống tự động trích <strong>50% Lợi Nhuận Ròng Thực Tế</strong> cho Đối tác.</p>
-                <p class="text-[10px] text-slate-500 mt-0.5">Công thức: (Tổng Lãi Thu - Chi Phí Nguồn) ÷ 2 = Lãi Đối Tác</p>
+                <p class="text-xs text-slate-600 mt-1">Hệ thống trích <strong>${statsObj.phanTramChiaLaiDoiTac ?? 50}% Lợi Nhuận Ròng</strong> cho Đối tác.
+                  <span class="inline-block bg-amber-100 text-amber-900 font-bold px-2 py-0.5 rounded text-[11px] ml-1">
+                    Phạm vi: ${statsObj.phamViChiaLaiDoiTac === 'LoaiTru' && (statsObj.danhSachLoaiTruDoiTac || []).length > 0 ? `Đang loại trừ ${statsObj.danhSachLoaiTruDoiTac.length} HĐ (${statsObj.danhSachLoaiTruDoiTac.join(', ')})` : 'Tất cả hợp đồng'}
+                  </span>
+                </p>
+                <p class="text-[10px] text-slate-500 mt-0.5">Công thức: ${statsObj.phamViChiaLaiDoiTac === 'LoaiTru' && (statsObj.danhSachLoaiTruDoiTac || []).length > 0 ? `(Lãi Thu Các HĐ Chọn - Chi Phí Nguồn)` : `(Tổng Lãi Thu - Chi Phí Nguồn)`} × ${statsObj.phanTramChiaLaiDoiTac ?? 50}% = Lãi Đối Tác</p>
 
                 <!-- Progress bar cho % đã rút -->
                 ${(() => {
@@ -3195,6 +3269,9 @@ const DEFAULT_CAPITAL_SOURCES = [
               </div>
 
               <div class="flex flex-wrap items-center gap-2 md:mt-1">
+                <button onclick="(() => { const src = state.capitalSources.find(s => s.MaNguon === 'GOP_VON' || s.MaNguon === 'TIEN_DOI_TAC' || (s.TenNguon || '').toLowerCase().includes('đối tác')) || state.capitalSources[0]; if (src) window.openCapitalSourceModal(src.MaNguon); })()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3 py-2 rounded-xl shadow-sm transition flex items-center gap-1.5 active:scale-95">
+                  ⚙️ Cấu hình chia lãi
+                </button>
                 <button onclick="window.openPartnerWithdrawModal && window.openPartnerWithdrawModal('RutRaNgoai')" class="bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs px-3 py-2 rounded-xl shadow-sm transition flex items-center gap-1.5 active:scale-95">
                   💸 Rút ra ngoài
                 </button>
@@ -3209,9 +3286,9 @@ const DEFAULT_CAPITAL_SOURCES = [
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div class="bg-white border border-amber-200 p-3.5 rounded-xl">
-                <div class="text-[10px] font-semibold text-amber-700">Lãi Đối Tác (50%)</div>
+                <div class="text-[10px] font-semibold text-amber-700">Lãi Đối Tác (${statsObj.phanTramChiaLaiDoiTac ?? 50}%)</div>
                 <div class="text-2xl font-extrabold text-amber-700 mt-0.5">${formatVND(statsObj.laiDoiTac)}</div>
-                <div class="text-[10px] text-amber-600">Trích 50% từ Tiền Lãi Thực</div>
+                <div class="text-[10px] text-amber-600">Trích ${statsObj.phanTramChiaLaiDoiTac ?? 50}% từ Lợi Nhuận Ròng</div>
               </div>
               <div class="bg-white border border-slate-200 p-3.5 rounded-xl">
                 <div class="text-[10px] font-semibold text-slate-500">Số Lãi ĐT Đã Rút</div>
@@ -3321,9 +3398,13 @@ const DEFAULT_CAPITAL_SOURCES = [
           const vonDaDung = det.duNoChoVay || 0;
           const vonHienTai = vonGoc - vonDaDung;
           const vonHienTaiCls = vonHienTai >= 0 ? 'text-emerald-700' : 'text-rose-600 font-bold';
+          
+          const isPartnerSrc = src.MaNguon === 'GOP_VON' || src.MaNguon === 'TIEN_DOI_TAC' || (src.TenNguon || '').toLowerCase().includes('đối tác') || src.PhanTramChiaLai !== undefined;
+          const partnerInfoHTML = isPartnerSrc ? `<div class="text-[11px] text-amber-700 font-bold mt-0.5 flex items-center gap-1"><span>🤝 Chia lãi đối tác:</span> <span class="bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded">${src.PhanTramChiaLai ?? 50}%</span> ${src.PhamViChiaLai === 'LoaiTru' && (src.HopDongLoaiTru || []).length > 0 ? `<span class="text-rose-600 font-bold text-[10px]">(Loại trừ ${src.HopDongLoaiTru.length} HĐ)</span>` : '<span class="text-emerald-700 text-[10px]">(Tất cả HĐ)</span>'}</div>` : '';
+
           rows += `<tr class="border-t hover:bg-slate-50">
             <td class="p-3 font-mono text-xs font-bold text-slate-400">${src.MaNguon}</td>
-            <td class="p-3 font-bold text-slate-800">${src.TenNguon}</td>
+            <td class="p-3 font-bold text-slate-800">${src.TenNguon}${partnerInfoHTML}</td>
             <td class="p-3 font-extrabold text-slate-900 text-right">${formatVND(vonGoc)}</td>
             <td class="p-3 font-bold text-amber-700 text-right">${formatVND(vonDaDung)}</td>
             <td class="p-3 font-extrabold ${vonHienTaiCls} text-right">${formatVND(vonHienTai)}</td>
@@ -3969,9 +4050,124 @@ const DEFAULT_CAPITAL_SOURCES = [
       return `<div id="customer-modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center z-50"><div class="bg-white rounded-xl w-full max-w-md p-6 shadow-xl animate-scaleIn"><h3 class="font-bold mb-4 text-slate-900 text-base">Thông tin Khách Hàng</h3><form onsubmit="window.handleSaveCustomer && window.handleSaveCustomer(event)"><div class="space-y-3 mb-5"><input name="MaKH" value="${data.MaKH}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500 font-bold text-slate-800" placeholder="Mã KH (VD: KH1)" required /><input name="TenKhachHang" value="${data.TenKhachHang}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500 font-medium text-slate-900" placeholder="Tên khách" required /><input name="SoDienThoai" value="${data.SoDienThoai}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500" placeholder="SĐT" /><input name="DiaChi" value="${data.DiaChi}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500" placeholder="Địa chỉ thường trú" /><input name="GhiChu" value="${data.GhiChu}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500" placeholder="Ghi chú thêm..." /></div><div class="flex justify-end gap-2"><button type="button" onclick="window.closeModal && window.closeModal('customer-modal')" class="px-4 py-2 bg-slate-100 text-slate-600 font-semibold text-sm rounded-xl">Hủy</button><button type="submit" class="px-4 py-2 bg-slate-900 text-white font-semibold text-sm rounded-xl">Lưu dữ liệu</button></div></form></div></div>`;
     }
 
+    function toggleExclusionList(show) {
+      const container = document.getElementById('exclusion-contracts-container');
+      if (container) {
+        if (show) container.classList.remove('hidden');
+        else container.classList.add('hidden');
+      }
+    }
+    window.toggleExclusionList = toggleExclusionList;
+
     function renderCapitalSourceModalHTML() {
-      const data = state.editingCapitalSource || { MaNguon: `NGUON_${state.capitalSources.length + 1}`, TenNguon: '', LaiSuatThang: 1.2, GhiChu: '' };
-      return `<div id="capital-source-modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center z-50"><div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl animate-scaleIn"><h3 class="font-bold text-slate-900 mb-4 text-base">Tài Khoản Nguồn Vốn</h3><form onsubmit="window.handleSaveCapitalSource && window.handleSaveCapitalSource(event)"><div class="space-y-3 mb-5"><input name="MaNguon" value="${data.MaNguon}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500 font-bold" placeholder="Mã Nguồn" required /><input name="TenNguon" value="${data.TenNguon}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500 font-semibold text-slate-800" placeholder="Tên Nguồn Vốn" required /><input type="number" step="0.01" name="LaiSuatThang" value="${data.LaiSuatThang}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500 font-bold" placeholder="Lãi suất vay đầu vào (%/tháng)" required /><input name="GhiChu" value="${data.GhiChu}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500" placeholder="Mô tả ghi chú..." /></div><div class="flex justify-end gap-2"><button type="button" onclick="window.closeModal && window.closeModal('capital-source-modal')" class="px-4 py-2 bg-slate-100 text-slate-600 font-semibold text-sm rounded-xl">Hủy</button><button type="submit" class="px-4 py-2 bg-slate-900 text-white font-semibold text-sm rounded-xl">Lưu tài khoản</button></div></form></div></div>`;
+      const data = state.editingCapitalSource || { MaNguon: `NGUON_${state.capitalSources.length + 1}`, TenNguon: '', LaiSuatThang: 0, GhiChu: '', PhanTramChiaLai: 50, PhamViChiaLai: 'TatCa', HopDongLoaiTru: [] };
+      const isEditing = Boolean(state.editingCapitalSource);
+      const phamVi = data.PhamViChiaLai || 'TatCa';
+      const excludedArray = Array.isArray(data.HopDongLoaiTru) ? data.HopDongLoaiTru : [];
+
+      const contractCheckboxListHTML = state.contracts.length === 0 
+        ? '<div class="text-slate-400 italic text-[11px]">Chưa có hợp đồng nào trong hệ thống</div>' 
+        : state.contracts.map(c => {
+            const isChecked = excludedArray.includes(c.MaHopDong);
+            const cust = state.customers.find(kh => kh.MaKH === c.MaKH);
+            const custName = cust ? cust.TenKhachHang : 'Khách hàng';
+            return `
+              <label class="flex items-center justify-between p-2 hover:bg-amber-100/50 rounded-lg cursor-pointer border-b border-slate-100 last:border-b-0">
+                <div class="flex items-center gap-2">
+                  <input type="checkbox" name="HopDongLoaiTru" value="${c.MaHopDong}" ${isChecked ? 'checked' : ''} class="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 cursor-pointer" />
+                  <div>
+                    <span class="font-bold text-slate-800">${c.MaHopDong}</span> - <span class="font-semibold text-slate-700">${custName}</span>
+                    <span class="text-[10px] text-slate-400 block">${formatVND(c.SoTienVay)} (${c.TrangThai})</span>
+                  </div>
+                </div>
+                ${isChecked ? '<span class="text-[10px] bg-rose-100 text-rose-700 font-extrabold px-2 py-0.5 rounded-full">Loại trừ</span>' : ''}
+              </label>
+            `;
+          }).join('');
+
+      return `
+        <div id="capital-source-modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center z-50">
+          <div class="bg-white rounded-2xl w-full max-w-lg p-6 shadow-xl animate-scaleIn max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
+              <h3 class="font-extrabold text-slate-900 text-base flex items-center gap-2">
+                🏦 ${isEditing ? 'Cập Nhật Nguồn Vốn' : 'Thêm Nguồn Vốn Mới'}
+              </h3>
+              <button type="button" onclick="window.closeModal && window.closeModal('capital-source-modal')" class="p-1 text-slate-400 hover:text-slate-800">
+                ${getIconSVG('x', 'w-5 h-5')}
+              </button>
+            </div>
+            
+            <form onsubmit="window.handleSaveCapitalSource && window.handleSaveCapitalSource(event)">
+              <div class="space-y-4 mb-5">
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Mã Nguồn <span class="text-rose-500">*</span></label>
+                  <input name="MaNguon" value="${data.MaNguon}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500 font-mono font-bold ${isEditing ? 'bg-slate-100 text-slate-500' : 'bg-white text-slate-800'}" placeholder="Mã Nguồn (VD: GOP_VON)" ${isEditing ? 'readonly' : 'required'} />
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Tên Nguồn Vốn <span class="text-rose-500">*</span></label>
+                  <input name="TenNguon" value="${data.TenNguon}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500 font-semibold text-slate-800 bg-white" placeholder="Tên Nguồn Vốn (VD: Tiền Đối Tác)" required />
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Lãi suất vay đầu vào (%/tháng)</label>
+                    <input type="number" step="0.01" name="LaiSuatThang" value="${data.LaiSuatThang ?? 0}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500 font-bold" placeholder="0" required />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-amber-800 uppercase mb-1 flex items-center gap-1">
+                      <span>🤝 Tỉ lệ chia lãi đối tác (%)</span>
+                    </label>
+                    <input type="number" step="1" min="0" max="100" name="PhanTramChiaLai" value="${data.PhanTramChiaLai ?? 50}" class="w-full border border-amber-300 bg-amber-50 p-2.5 text-sm rounded-xl focus:outline-none focus:border-amber-500 font-black text-amber-900" placeholder="VD: 50" required />
+                  </div>
+                </div>
+
+                <!-- CẤU HÌNH PHẠM VI CHIA LÃI ĐỐI TÁC -->
+                <div class="p-3.5 bg-amber-50/80 border border-amber-200 rounded-2xl space-y-2.5">
+                  <div class="flex justify-between items-center">
+                    <label class="block text-xs font-extrabold text-amber-950 uppercase flex items-center gap-1">
+                      <span>🤝 Cấu Hình Phạm Vi Chia LÃI ĐỐI TÁC</span>
+                    </label>
+                    <span class="text-[10px] bg-amber-200/60 text-amber-900 font-bold px-2 py-0.5 rounded-full">Tính theo HĐ</span>
+                  </div>
+
+                  <div class="flex flex-wrap gap-4 text-xs font-bold text-slate-700 bg-white p-2.5 rounded-xl border border-amber-200">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="PhamViChiaLai" value="TatCa" ${phamVi === 'TatCa' ? 'checked' : ''} onchange="window.toggleExclusionList && window.toggleExclusionList(false)" class="w-4 h-4 text-amber-600 focus:ring-amber-500" />
+                      <span>Chia % tất cả hợp đồng</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="PhamViChiaLai" value="LoaiTru" ${phamVi === 'LoaiTru' ? 'checked' : ''} onchange="window.toggleExclusionList && window.toggleExclusionList(true)" class="w-4 h-4 text-amber-600 focus:ring-amber-500" />
+                      <span>Loại trừ một số hợp đồng</span>
+                    </label>
+                  </div>
+
+                  <!-- Danh sách Hợp đồng loại trừ -->
+                  <div id="exclusion-contracts-container" class="${phamVi === 'LoaiTru' ? '' : 'hidden'} mt-2 pt-2 border-t border-amber-200">
+                    <div class="text-[11px] font-bold text-amber-900 mb-1 flex justify-between items-center">
+                      <span>Tích chọn Hợp Đồng KHÔNG chia lãi cho đối tác:</span>
+                      <span class="text-[10px] text-slate-500 font-normal">Check = Loại trừ</span>
+                    </div>
+                    <div class="max-h-48 overflow-y-auto space-y-1 bg-white p-2 rounded-xl border border-amber-200 text-xs">
+                      ${contractCheckboxListHTML}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Ghi Chú</label>
+                  <input name="GhiChu" value="${data.GhiChu || ''}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500" placeholder="Mô tả ghi chú..." />
+                </div>
+              </div>
+
+              <div class="flex justify-end gap-2 pt-2 border-t">
+                <button type="button" onclick="window.closeModal && window.closeModal('capital-source-modal')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold text-sm rounded-xl">Hủy</button>
+                <button type="submit" class="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm rounded-xl shadow-md">Lưu nguồn vốn</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      `;
     }
 
     function renderContractModalHTML() {
@@ -4182,7 +4378,8 @@ const DEFAULT_CAPITAL_SOURCES = [
       const statsObj = getStats();
       const tongRutLai = (state.interestWithdrawals || []).reduce((sum, w) => sum + Number(w.SoTien || 0), 0);
       const tienLaiThuc = statsObj.loiNhuanRongThucTe;
-      const tongLaiConThucTe = tienLaiThuc - tongRutLai;
+      const laiDoiTac = statsObj.laiDoiTac || 0;
+      const tongLaiConThucTe = tienLaiThuc - laiDoiTac - tongRutLai;
 
       let hist = (state.interestWithdrawals || []).map((w, idx) => `
         <div class="flex justify-between border-b p-2">
@@ -4215,18 +4412,22 @@ const DEFAULT_CAPITAL_SOURCES = [
               </button>
             </div>
             
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 mb-4">
               <div class="p-3 bg-emerald-50 rounded-xl">
-                <div class="text-[10px] text-emerald-600 font-bold uppercase">Tiền Lãi Thực</div>
+                <div class="text-[10px] text-emerald-600 font-bold uppercase">Tổng Lãi Thực Tế</div>
                 <div class="text-base font-extrabold text-emerald-700 mt-0.5">${formatVND(tienLaiThuc)}</div>
+              </div>
+              <div class="p-3 bg-amber-50 rounded-xl">
+                <div class="text-[10px] text-amber-800 font-bold uppercase">🤝 Trích Lãi Đối Tác</div>
+                <div class="text-base font-extrabold text-amber-800 mt-0.5">${formatVND(laiDoiTac)}</div>
               </div>
               <div class="p-3 bg-indigo-50 rounded-xl">
                 <div class="text-[10px] text-indigo-600 font-bold uppercase">Đã rút lũy kế</div>
                 <div class="text-base font-extrabold text-indigo-700 mt-0.5">${formatVND(tongRutLai)}</div>
               </div>
-              <div class="p-3 bg-amber-50 rounded-xl">
-                <div class="text-[10px] text-amber-600 font-bold uppercase">Lãi còn thực tế</div>
-                <div class="text-base font-extrabold text-amber-700 mt-0.5">${formatVND(tongLaiConThucTe)}</div>
+              <div class="p-3 bg-emerald-100 border border-emerald-300 rounded-xl">
+                <div class="text-[10px] text-emerald-800 font-extrabold uppercase">Lãi còn thực tế</div>
+                <div class="text-base font-black text-emerald-900 mt-0.5">${formatVND(tongLaiConThucTe)}</div>
               </div>
             </div>
 

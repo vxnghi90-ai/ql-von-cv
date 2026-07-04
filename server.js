@@ -28,7 +28,7 @@ const MIME_TYPES = {
 };
 
 const server = http.createServer((req, res) => {
-  let urlPath = req.url === '/' ? '/Quản-Lý-Vốn-CV-Full.html' : req.url;
+  let urlPath = req.url === '/' ? '/index.html' : req.url;
   urlPath = urlPath.split('?')[0];
   
   const filePath = path.join(__dirname, decodeURIComponent(urlPath));
