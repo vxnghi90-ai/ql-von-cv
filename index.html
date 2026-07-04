@@ -1022,6 +1022,9 @@ const DEFAULT_CAPITAL_SOURCES = [
     }
 
     function connectGoogleDrive() {
+      if (window.location.protocol === 'file:') {
+        return showAlert("Google chặn file://", "Google OAuth 2.0 bảo mật KHÔNG cho phép đăng nhập từ đường dẫn tệp file://.\n\n👉 Trên máy tính: Hãy chạy file 'Chạy ứng dụng.bat' và mở trang qua http://localhost:3000\n👉 Trên điện thoại: Hãy truy cập link GitHub https://vxnghi90-ai.github.io/ql-von-cv/");
+      }
       if (!tokenClient) {
         initGoogleAuth();
       }
