@@ -1,0 +1,333 @@
+﻿{
+    "KhachHang":  [
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH1",
+                          "SoDienThoai":  "0587560719",
+                          "TenKhachHang":  "Trọng (KHX 1)"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH2",
+                          "SoDienThoai":  "0934386286",
+                          "TenKhachHang":  "A Cường (KHX 2)"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH3",
+                          "SoDienThoai":  "0898263358",
+                          "TenKhachHang":  "Bằng (KHX 3)"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH4",
+                          "SoDienThoai":  "",
+                          "TenKhachHang":  "Bạn Anh Công Văn (KHX 4)"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH5",
+                          "SoDienThoai":  "0924249026",
+                          "TenKhachHang":  "Minh Quyến (KHX 5)"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH6",
+                          "SoDienThoai":  "0366744487",
+                          "TenKhachHang":  "Đạt (KHX 6)"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH7",
+                          "SoDienThoai":  "0967213629",
+                          "TenKhachHang":  "Hiểu (KHX 8)"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH8",
+                          "SoDienThoai":  "0876335773",
+                          "TenKhachHang":  "Trần Đình Cương (KHX 9)"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "JG6M+77C, Tam Cường, Vĩnh Bảo, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH9",
+                          "SoDienThoai":  "0772348739",
+                          "TenKhachHang":  "Hiếu Mb (KHX 10)"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH10",
+                          "SoDienThoai":  "",
+                          "TenKhachHang":  "Nguyễn Văn Ba (KHX 11)"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH11",
+                          "SoDienThoai":  "0562186268",
+                          "TenKhachHang":  "Nguyễn Thành Luân (KHX12)"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH12",
+                          "SoDienThoai":  "",
+                          "TenKhachHang":  "SH mode (KHX 13)"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH13",
+                          "SoDienThoai":  "0523422886",
+                          "TenKhachHang":  "Ngô Quan Kiên (KHX 14)"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH14",
+                          "SoDienThoai":  "0326233193",
+                          "TenKhachHang":  "Phạm Anh Hùng (KHX 15)"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH15",
+                          "SoDienThoai":  "0795639445",
+                          "TenKhachHang":  "Phạm Trung Kiên (KHX 16)"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH16",
+                          "SoDienThoai":  "",
+                          "TenKhachHang":  "Anh Nghĩa (Vinhome) (KHX 17)"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH17",
+                          "SoDienThoai":  "",
+                          "TenKhachHang":  "Hiếu LG"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH18",
+                          "SoDienThoai":  "",
+                          "TenKhachHang":  "Công Văn (KHX 18)"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH19",
+                          "SoDienThoai":  "",
+                          "TenKhachHang":  "Cường Cá (KHX19)"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH20",
+                          "SoDienThoai":  "",
+                          "TenKhachHang":  "Đoàn Thế Vinh (KHX 20)"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH21",
+                          "SoDienThoai":  "",
+                          "TenKhachHang":  "Nghĩa Vinhome"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH22",
+                          "SoDienThoai":  "",
+                          "TenKhachHang":  "LAPTOP"
+                      },
+                      {
+                          "GhiChu":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "MaKH":  "KH23",
+                          "SoDienThoai":  "",
+                          "TenKhachHang":  "Hoang Long LG"
+                      }
+                  ],
+    "HopDong":  [
+                    {
+                        "MaHopDong":  "HDVT1",
+                        "NgayVaySerial":  46146,
+                        "LaiNgayTrenTrieu":  2500,
+                        "MaKH":  "KH23",
+                        "SoTienVay":  5000000
+                    },
+                    {
+                        "MaHopDong":  "HDVT2",
+                        "NgayVaySerial":  46178,
+                        "LaiNgayTrenTrieu":  2500,
+                        "MaKH":  "KH12",
+                        "SoTienVay":  20000000
+                    },
+                    {
+                        "MaHopDong":  "HDVT3",
+                        "NgayVaySerial":  46181,
+                        "LaiNgayTrenTrieu":  2500,
+                        "MaKH":  "KH6",
+                        "SoTienVay":  6938375
+                    },
+                    {
+                        "MaHopDong":  "HDVT4",
+                        "NgayVaySerial":  46183,
+                        "LaiNgayTrenTrieu":  2500,
+                        "MaKH":  "KH26",
+                        "SoTienVay":  5000000
+                    },
+                    {
+                        "MaHopDong":  "HDVT5",
+                        "NgayVaySerial":  46184,
+                        "LaiNgayTrenTrieu":  2500,
+                        "MaKH":  "KH14",
+                        "SoTienVay":  5000000
+                    },
+                    {
+                        "MaHopDong":  "HDVT6",
+                        "NgayVaySerial":  46185,
+                        "LaiNgayTrenTrieu":  1700,
+                        "MaKH":  "KH18",
+                        "SoTienVay":  20000000
+                    },
+                    {
+                        "MaHopDong":  "HDVT7",
+                        "NgayVaySerial":  46186,
+                        "LaiNgayTrenTrieu":  2500,
+                        "MaKH":  "KH1",
+                        "SoTienVay":  6000000
+                    },
+                    {
+                        "MaHopDong":  "HDVT8",
+                        "NgayVaySerial":  46187,
+                        "LaiNgayTrenTrieu":  2500,
+                        "MaKH":  "KH2",
+                        "SoTienVay":  15000000
+                    },
+                    {
+                        "MaHopDong":  "HDVT9",
+                        "NgayVaySerial":  46188,
+                        "LaiNgayTrenTrieu":  2500,
+                        "MaKH":  "KH3",
+                        "SoTienVay":  5000000
+                    },
+                    {
+                        "MaHopDong":  "HDVT10",
+                        "NgayVaySerial":  46189,
+                        "LaiNgayTrenTrieu":  2500,
+                        "MaKH":  "KH4",
+                        "SoTienVay":  10000000
+                    },
+                    {
+                        "MaHopDong":  "HDVT11",
+                        "NgayVaySerial":  46160,
+                        "LaiNgayTrenTrieu":  2500,
+                        "MaKH":  "KH15",
+                        "SoTienVay":  10000000
+                    },
+                    {
+                        "MaHopDong":  "HDVT12",
+                        "NgayVaySerial":  46161,
+                        "LaiNgayTrenTrieu":  2500,
+                        "MaKH":  "KH6",
+                        "SoTienVay":  10000000
+                    },
+                    {
+                        "MaHopDong":  "HDVT13",
+                        "NgayVaySerial":  46193,
+                        "LaiNgayTrenTrieu":  2000,
+                        "MaKH":  "KH21",
+                        "SoTienVay":  20000000
+                    },
+                    {
+                        "MaHopDong":  "HDVT14",
+                        "NgayVaySerial":  46012,
+                        "LaiNgayTrenTrieu":  0,
+                        "MaKH":  "KH22",
+                        "SoTienVay":  1000000
+                    },
+                    {
+                        "MaHopDong":  "HDVT15",
+                        "NgayVaySerial":  46163,
+                        "LaiNgayTrenTrieu":  2000,
+                        "MaKH":  "KH17",
+                        "SoTienVay":  5000000
+                    },
+                    {
+                        "MaHopDong":  "HDVT16",
+                        "NgayVaySerial":  46163,
+                        "LaiNgayTrenTrieu":  2500,
+                        "MaKH":  "KH23",
+                        "SoTienVay":  5000000
+                    },
+                    {
+                        "MaHopDong":  "HDVT17",
+                        "NgayVaySerial":  46167,
+                        "LaiNgayTrenTrieu":  2500,
+                        "MaKH":  "KH8",
+                        "SoTienVay":  10000000
+                    },
+                    {
+                        "MaHopDong":  "HDVT18",
+                        "NgayVaySerial":  46170,
+                        "LaiNgayTrenTrieu":  2500,
+                        "MaKH":  "KH5",
+                        "SoTienVay":  5000000
+                    },
+                    {
+                        "MaHopDong":  "HDVT19",
+                        "NgayVaySerial":  46170,
+                        "LaiNgayTrenTrieu":  2500,
+                        "MaKH":  "KH10",
+                        "SoTienVay":  10000000
+                    },
+                    {
+                        "MaHopDong":  "HDVT20",
+                        "NgayVaySerial":  46172,
+                        "LaiNgayTrenTrieu":  2000,
+                        "MaKH":  "KH11",
+                        "SoTienVay":  5000000
+                    }
+                ],
+    "NguonVon":  [
+                     {
+                         "MaNguon":  "NGUON_TU_CO",
+                         "LaiSuatThang":  0,
+                         "VonHienTai":  0,
+                         "TenNguon":  "Vốn Tự Có"
+                     },
+                     {
+                         "MaNguon":  "VAY_NGAN_HANG",
+                         "LaiSuatThang":  0.01,
+                         "VonHienTai":  139000000,
+                         "TenNguon":  "Vay Ngân Hàng"
+                     },
+                     {
+                         "MaNguon":  "VAY_THE_TIN_DUNG_TECHCOMBANK",
+                         "LaiSuatThang":  0.017,
+                         "VonHienTai":  41000000,
+                         "TenNguon":  "Vay Ngân Hàng Techcombank"
+                     },
+                     {
+                         "MaNguon":  "VAY_THE_TIN_DUNG_VPBANK",
+                         "LaiSuatThang":  0.017,
+                         "VonHienTai":  20000000,
+                         "TenNguon":  "Vay Ngân Hàng VPBank"
+                     }
+                 ]
+}

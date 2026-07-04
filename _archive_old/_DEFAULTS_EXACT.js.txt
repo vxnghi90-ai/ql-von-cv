@@ -1,0 +1,583 @@
+const DEFAULT_CUSTOMERS = [
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH1",
+      "SoDienThoai": "0587560719",
+      "TenKhachHang": "Trọng (KHX 1)"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH2",
+      "SoDienThoai": "0934386286",
+      "TenKhachHang": "A Cường (KHX 2)"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH3",
+      "SoDienThoai": "0898263358",
+      "TenKhachHang": "Bằng (KHX 3)"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH4",
+      "SoDienThoai": "",
+      "TenKhachHang": "Bạn Anh Công Văn (KHX 4)"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH5",
+      "SoDienThoai": "0924249026",
+      "TenKhachHang": "Minh Quyến (KHX 5)"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH6",
+      "SoDienThoai": "0366744487",
+      "TenKhachHang": "Đạt (KHX 6)"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH7",
+      "SoDienThoai": "0967213629",
+      "TenKhachHang": "Hiểu (KHX 8)"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH8",
+      "SoDienThoai": "0876335773",
+      "TenKhachHang": "Trần Đình Cương (KHX 9)"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "JG6M+77C, Tam Cường, Vĩnh Bảo, Hải Phòng, Việt Nam",
+      "MaKH": "KH9",
+      "SoDienThoai": "0772348739",
+      "TenKhachHang": "Hiếu Mb (KHX 10)"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH10",
+      "SoDienThoai": "",
+      "TenKhachHang": "Nguyễn Văn Ba (KHX 11)"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH11",
+      "SoDienThoai": "0562186268",
+      "TenKhachHang": "Nguyễn Thành Luân (KHX12)"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH12",
+      "SoDienThoai": "",
+      "TenKhachHang": "SH mode (KHX 13)"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH13",
+      "SoDienThoai": "0523422886",
+      "TenKhachHang": "Ngô Quan Kiên (KHX 14)"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH14",
+      "SoDienThoai": "0326233193",
+      "TenKhachHang": "Phạm Anh Hùng (KHX 15)"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH15",
+      "SoDienThoai": "0795639445",
+      "TenKhachHang": "Phạm Trung Kiên (KHX 16)"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH16",
+      "SoDienThoai": "",
+      "TenKhachHang": "Anh Nghĩa (Vinhome) (KHX 17)"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH17",
+      "SoDienThoai": "",
+      "TenKhachHang": "Hiếu LG"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH18",
+      "SoDienThoai": "",
+      "TenKhachHang": "Công Văn (KHX 18)"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH19",
+      "SoDienThoai": "",
+      "TenKhachHang": "Cường Cá (KHX19)"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH20",
+      "SoDienThoai": "",
+      "TenKhachHang": "Đoàn Thế Vinh (KHX 20)"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH21",
+      "SoDienThoai": "",
+      "TenKhachHang": "Nghĩa Vinhome"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH22",
+      "SoDienThoai": "",
+      "TenKhachHang": "LAPTOP"
+    },
+    {
+      "GhiChu": "",
+      "DiaChi": "Tiên Lãng, Hải Phòng, Việt Nam",
+      "MaKH": "KH23",
+      "SoDienThoai": "",
+      "TenKhachHang": "Hoang Long LG"
+    }
+  ];
+
+const DEFAULT_CONTRACTS = [
+    {
+      "NgayDaoHan": "2026-06-03",
+      "NgayVay": "2026-05-04",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 5000000,
+      "MaHopDong": "HDVT1",
+      "LaiNgayTrenTrieu": 2500,
+      "MaKH": "KH20",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    },
+    {
+      "NgayDaoHan": "2026-07-05",
+      "NgayVay": "2026-06-05",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 20000000,
+      "MaHopDong": "HDVT2",
+      "LaiNgayTrenTrieu": 2500,
+      "MaKH": "KH11",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    },
+    {
+      "NgayDaoHan": "2026-07-08",
+      "NgayVay": "2026-06-08",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 6938375,
+      "MaHopDong": "HDVT3",
+      "LaiNgayTrenTrieu": 2500,
+      "MaKH": "KH6",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    },
+    {
+      "NgayDaoHan": "2026-07-10",
+      "NgayVay": "2026-06-10",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 5000000,
+      "MaHopDong": "HDVT4",
+      "LaiNgayTrenTrieu": 2500,
+      "MaKH": "KH23",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    },
+    {
+      "NgayDaoHan": "2026-07-11",
+      "NgayVay": "2026-06-11",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 5000000,
+      "MaHopDong": "HDVT5",
+      "LaiNgayTrenTrieu": 2500,
+      "MaKH": "KH13",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    },
+    {
+      "NgayDaoHan": "2026-07-12",
+      "NgayVay": "2026-06-12",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 20000000,
+      "MaHopDong": "HDVT6",
+      "LaiNgayTrenTrieu": 1700,
+      "MaKH": "KH17",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    },
+    {
+      "NgayDaoHan": "2026-07-13",
+      "NgayVay": "2026-06-13",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 6000000,
+      "MaHopDong": "HDVT7",
+      "LaiNgayTrenTrieu": 2500,
+      "MaKH": "KH1",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    },
+    {
+      "NgayDaoHan": "2026-07-14",
+      "NgayVay": "2026-06-14",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 15000000,
+      "MaHopDong": "HDVT8",
+      "LaiNgayTrenTrieu": 2500,
+      "MaKH": "KH2",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    },
+    {
+      "NgayDaoHan": "2026-07-15",
+      "NgayVay": "2026-06-15",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 5000000,
+      "MaHopDong": "HDVT9",
+      "LaiNgayTrenTrieu": 2500,
+      "MaKH": "KH3",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    },
+    {
+      "NgayDaoHan": "2026-07-16",
+      "NgayVay": "2026-06-16",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 10000000,
+      "MaHopDong": "HDVT10",
+      "LaiNgayTrenTrieu": 2500,
+      "MaKH": "KH4",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    },
+    {
+      "NgayDaoHan": "2026-06-17",
+      "NgayVay": "2026-05-18",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 10000000,
+      "MaHopDong": "HDVT11",
+      "LaiNgayTrenTrieu": 2500,
+      "MaKH": "KH14",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    },
+    {
+      "NgayDaoHan": "2026-06-18",
+      "NgayVay": "2026-05-19",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 10000000,
+      "MaHopDong": "HDVT12",
+      "LaiNgayTrenTrieu": 2500,
+      "MaKH": "KH6",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    },
+    {
+      "NgayDaoHan": "2026-07-20",
+      "NgayVay": "2026-06-20",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 20000000,
+      "MaHopDong": "HDVT13",
+      "LaiNgayTrenTrieu": 2000,
+      "MaKH": "KH18",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    },
+    {
+      "NgayDaoHan": "2026-01-20",
+      "NgayVay": "2025-12-21",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 1000000,
+      "MaHopDong": "HDVT14",
+      "LaiNgayTrenTrieu": 0,
+      "MaKH": "KH19",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    },
+    {
+      "NgayDaoHan": "2026-06-20",
+      "NgayVay": "2026-05-21",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 5000000,
+      "MaHopDong": "HDVT15",
+      "LaiNgayTrenTrieu": 2000,
+      "MaKH": "KH16",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    },
+    {
+      "NgayDaoHan": "2026-06-20",
+      "NgayVay": "2026-05-21",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 5000000,
+      "MaHopDong": "HDVT16",
+      "LaiNgayTrenTrieu": 2500,
+      "MaKH": "KH20",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    },
+    {
+      "NgayDaoHan": "2026-06-24",
+      "NgayVay": "2026-05-25",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 10000000,
+      "MaHopDong": "HDVT17",
+      "LaiNgayTrenTrieu": 2500,
+      "MaKH": "KH7",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    },
+    {
+      "NgayDaoHan": "2026-06-27",
+      "NgayVay": "2026-05-28",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 5000000,
+      "MaHopDong": "HDVT18",
+      "LaiNgayTrenTrieu": 2500,
+      "MaKH": "KH5",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    },
+    {
+      "NgayDaoHan": "2026-06-27",
+      "NgayVay": "2026-05-28",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 10000000,
+      "MaHopDong": "HDVT19",
+      "LaiNgayTrenTrieu": 2500,
+      "MaKH": "KH9",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    },
+    {
+      "NgayDaoHan": "2026-06-29",
+      "NgayVay": "2026-05-30",
+      "LoaiTaiSan": "",
+      "SoMay": "",
+      "SoKhung": "",
+      "GhiChu": "",
+      "TrangThai": "Đang vay",
+      "SoTienVay": 5000000,
+      "MaHopDong": "HDVT20",
+      "LaiNgayTrenTrieu": 2000,
+      "MaKH": "KH10",
+      "BienSo": "",
+      "HinhThucLai": "Lãi cố định",
+      "TenTaiSan": "",
+      "LichSuNguon": [],
+      "MaNguon": null
+    }
+  ];
+
+const DEFAULT_PAYMENTS = [];
+
+const DEFAULT_CAPITAL_SOURCES = [
+    {
+      "MaNguon": "NGUON_TU_CO",
+      "GhiChu": "",
+      "LichSuBienDong": [
+        {
+          "Ngay": "2025-01-01",
+          "SoTien": 0,
+          "NoiDung": "Khởi tạo"
+        }
+      ],
+      "LaiSuatThang": 0,
+      "TenNguon": "Vốn Tự Có"
+    },
+    {
+      "MaNguon": "VAY_NGAN_HANG",
+      "GhiChu": "",
+      "LichSuBienDong": [
+        {
+          "Ngay": "2025-01-01",
+          "SoTien": 139000000,
+          "NoiDung": "Khởi tạo"
+        }
+      ],
+      "LaiSuatThang": 1.0,
+      "TenNguon": "Vay Ngân Hàng"
+    },
+    {
+      "MaNguon": "VAY_THE_TIN_DUNG_TECHCOMBANK",
+      "GhiChu": "",
+      "LichSuBienDong": [
+        {
+          "Ngay": "2025-01-01",
+          "SoTien": 41000000,
+          "NoiDung": "Khởi tạo"
+        }
+      ],
+      "LaiSuatThang": 1.7,
+      "TenNguon": "Vay Ngân Hàng Techcombank"
+    },
+    {
+      "MaNguon": "VAY_THE_TIN_DUNG_VPBANK",
+      "GhiChu": "",
+      "LichSuBienDong": [
+        {
+          "Ngay": "2025-01-01",
+          "SoTien": 20000000,
+          "NoiDung": "Khởi tạo"
+        }
+      ],
+      "LaiSuatThang": 1.7,
+      "TenNguon": "Vay Ngân Hàng VPBank"
+    }
+  ];

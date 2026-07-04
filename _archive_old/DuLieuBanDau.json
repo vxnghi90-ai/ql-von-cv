@@ -1,0 +1,1245 @@
+﻿{
+    "contracts":  [
+                      {
+                          "NgayDaoHan":  "2026-06-08",
+                          "NgayVay":  "2026-05-04",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM565963",
+                          "SoKhung":  "SK658143",
+                          "GhiChu":  "",
+                          "TrangThai":  "Dang vay",
+                          "SoTienVay":  5000000,
+                          "MaHopDong":  "HDVT1",
+                          "LaiNgayTrenTrieu":  2500,
+                          "MaKH":  "KH23",
+                          "BienSo":  "15-H54 304.59",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 119",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  "NGUON_TU_CO",
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2026-05-04",
+                                                  "SoTien":  5000000
+                                              }
+                                          ],
+                          "MaNguon":  "NGUON_TU_CO"
+                      },
+                      {
+                          "NgayDaoHan":  "2026-07-10",
+                          "NgayVay":  "2026-06-05",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM270736",
+                          "SoKhung":  "SK922906",
+                          "GhiChu":  "",
+                          "TrangThai":  "Dang vay",
+                          "SoTienVay":  20000000,
+                          "MaHopDong":  "HDVT2",
+                          "LaiNgayTrenTrieu":  2500,
+                          "MaKH":  "KH12",
+                          "BienSo":  "15-H55 143.76",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 146",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  "VAY_NGAN_HANG",
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2026-06-05",
+                                                  "SoTien":  20000000
+                                              }
+                                          ],
+                          "MaNguon":  "VAY_NGAN_HANG"
+                      },
+                      {
+                          "NgayDaoHan":  "2026-07-13",
+                          "NgayVay":  "2026-06-08",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM973389",
+                          "SoKhung":  "SK823445",
+                          "GhiChu":  "",
+                          "TrangThai":  "Dang vay",
+                          "SoTienVay":  6938375,
+                          "MaHopDong":  "HDVT3",
+                          "LaiNgayTrenTrieu":  2500,
+                          "MaKH":  "KH6",
+                          "BienSo":  "15-H55 452.10",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 141",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  "VAY_THE_TIN_DUNG_TECHCOMBANK",
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2026-06-08",
+                                                  "SoTien":  6938375
+                                              }
+                                          ],
+                          "MaNguon":  "VAY_THE_TIN_DUNG_TECHCOMBANK"
+                      },
+                      {
+                          "NgayDaoHan":  "2026-07-15",
+                          "NgayVay":  "2026-06-10",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM869911",
+                          "SoKhung":  "SK424379",
+                          "GhiChu":  "",
+                          "TrangThai":  "Da tat toan",
+                          "SoTienVay":  5000000,
+                          "MaHopDong":  "HDVT4",
+                          "LaiNgayTrenTrieu":  2500,
+                          "MaKH":  "KH26",
+                          "BienSo":  "15-H38 211.83",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 151",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  "VAY_THE_TIN_DUNG_VPBANK",
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2026-06-10",
+                                                  "SoTien":  5000000
+                                              }
+                                          ],
+                          "MaNguon":  "VAY_THE_TIN_DUNG_VPBANK"
+                      },
+                      {
+                          "NgayDaoHan":  "2026-07-16",
+                          "NgayVay":  "2026-06-11",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM791451",
+                          "SoKhung":  "SK632128",
+                          "GhiChu":  "",
+                          "TrangThai":  "Dang vay",
+                          "SoTienVay":  5000000,
+                          "MaHopDong":  "HDVT5",
+                          "LaiNgayTrenTrieu":  2500,
+                          "MaKH":  "KH14",
+                          "BienSo":  "15-H34 795.24",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 157",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  null,
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2026-06-11",
+                                                  "SoTien":  5000000
+                                              }
+                                          ],
+                          "MaNguon":  null
+                      },
+                      {
+                          "NgayDaoHan":  "2026-07-17",
+                          "NgayVay":  "2026-06-12",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM874539",
+                          "SoKhung":  "SK325336",
+                          "GhiChu":  "",
+                          "TrangThai":  "Dang vay",
+                          "SoTienVay":  20000000,
+                          "MaHopDong":  "HDVT6",
+                          "LaiNgayTrenTrieu":  1700,
+                          "MaKH":  "KH18",
+                          "BienSo":  "15-H53 255.77",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 151",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  null,
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2026-06-12",
+                                                  "SoTien":  20000000
+                                              }
+                                          ],
+                          "MaNguon":  null
+                      },
+                      {
+                          "NgayDaoHan":  "2026-07-18",
+                          "NgayVay":  "2026-06-13",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM802869",
+                          "SoKhung":  "SK356486",
+                          "GhiChu":  "",
+                          "TrangThai":  "Dang vay",
+                          "SoTienVay":  6000000,
+                          "MaHopDong":  "HDVT7",
+                          "LaiNgayTrenTrieu":  2500,
+                          "MaKH":  "KH1",
+                          "BienSo":  "15-H76 878.45",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 151",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  null,
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2026-06-13",
+                                                  "SoTien":  6000000
+                                              }
+                                          ],
+                          "MaNguon":  null
+                      },
+                      {
+                          "NgayDaoHan":  "2026-07-19",
+                          "NgayVay":  "2026-06-14",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM944160",
+                          "SoKhung":  "SK279058",
+                          "GhiChu":  "",
+                          "TrangThai":  "Da tat toan",
+                          "SoTienVay":  15000000,
+                          "MaHopDong":  "HDVT8",
+                          "LaiNgayTrenTrieu":  2500,
+                          "MaKH":  "KH2",
+                          "BienSo":  "15-H73 733.17",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 157",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  null,
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2026-06-14",
+                                                  "SoTien":  15000000
+                                              }
+                                          ],
+                          "MaNguon":  null
+                      },
+                      {
+                          "NgayDaoHan":  "2026-07-20",
+                          "NgayVay":  "2026-06-15",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM322440",
+                          "SoKhung":  "SK110886",
+                          "GhiChu":  "",
+                          "TrangThai":  "Dang vay",
+                          "SoTienVay":  5000000,
+                          "MaHopDong":  "HDVT9",
+                          "LaiNgayTrenTrieu":  2500,
+                          "MaKH":  "KH3",
+                          "BienSo":  "15-H19 255.85",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 124",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  null,
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2026-06-15",
+                                                  "SoTien":  5000000
+                                              }
+                                          ],
+                          "MaNguon":  null
+                      },
+                      {
+                          "NgayDaoHan":  "2026-07-21",
+                          "NgayVay":  "2026-06-16",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM588899",
+                          "SoKhung":  "SK355417",
+                          "GhiChu":  "",
+                          "TrangThai":  "Dang vay",
+                          "SoTienVay":  10000000,
+                          "MaHopDong":  "HDVT10",
+                          "LaiNgayTrenTrieu":  2500,
+                          "MaKH":  "KH4",
+                          "BienSo":  "15-H43 793.19",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 155",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  null,
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2026-06-16",
+                                                  "SoTien":  10000000
+                                              }
+                                          ],
+                          "MaNguon":  null
+                      },
+                      {
+                          "NgayDaoHan":  "2026-06-22",
+                          "NgayVay":  "2026-05-18",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM372583",
+                          "SoKhung":  "SK229893",
+                          "GhiChu":  "",
+                          "TrangThai":  "Dang vay",
+                          "SoTienVay":  10000000,
+                          "MaHopDong":  "HDVT11",
+                          "LaiNgayTrenTrieu":  2500,
+                          "MaKH":  "KH15",
+                          "BienSo":  "15-H47 287.73",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 118",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  null,
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2026-05-18",
+                                                  "SoTien":  10000000
+                                              }
+                                          ],
+                          "MaNguon":  null
+                      },
+                      {
+                          "NgayDaoHan":  "2026-06-23",
+                          "NgayVay":  "2026-05-19",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM488157",
+                          "SoKhung":  "SK514486",
+                          "GhiChu":  "",
+                          "TrangThai":  "Da tat toan",
+                          "SoTienVay":  10000000,
+                          "MaHopDong":  "HDVT12",
+                          "LaiNgayTrenTrieu":  2500,
+                          "MaKH":  "KH6",
+                          "BienSo":  "15-H31 302.82",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 133",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  null,
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2026-05-19",
+                                                  "SoTien":  10000000
+                                              }
+                                          ],
+                          "MaNguon":  null
+                      },
+                      {
+                          "NgayDaoHan":  "2026-07-25",
+                          "NgayVay":  "2026-06-20",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM900314",
+                          "SoKhung":  "SK315049",
+                          "GhiChu":  "",
+                          "TrangThai":  "Dang vay",
+                          "SoTienVay":  20000000,
+                          "MaHopDong":  "HDVT13",
+                          "LaiNgayTrenTrieu":  2000,
+                          "MaKH":  "KH21",
+                          "BienSo":  "15-H40 875.49",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 145",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  null,
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2026-06-20",
+                                                  "SoTien":  20000000
+                                              }
+                                          ],
+                          "MaNguon":  null
+                      },
+                      {
+                          "NgayDaoHan":  "2026-01-25",
+                          "NgayVay":  "2025-12-21",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM838124",
+                          "SoKhung":  "SK161028",
+                          "GhiChu":  "",
+                          "TrangThai":  "Dang vay",
+                          "SoTienVay":  1000000,
+                          "MaHopDong":  "HDVT14",
+                          "LaiNgayTrenTrieu":  0,
+                          "MaKH":  "KH22",
+                          "BienSo":  "15-H46 137.40",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 133",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  null,
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2025-12-21",
+                                                  "SoTien":  1000000
+                                              }
+                                          ],
+                          "MaNguon":  null
+                      },
+                      {
+                          "NgayDaoHan":  "2026-06-25",
+                          "NgayVay":  "2026-05-21",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM660398",
+                          "SoKhung":  "SK109249",
+                          "GhiChu":  "",
+                          "TrangThai":  "Dang vay",
+                          "SoTienVay":  5000000,
+                          "MaHopDong":  "HDVT15",
+                          "LaiNgayTrenTrieu":  2000,
+                          "MaKH":  "KH17",
+                          "BienSo":  "15-H97 723.12",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 146",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  null,
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2026-05-21",
+                                                  "SoTien":  5000000
+                                              }
+                                          ],
+                          "MaNguon":  null
+                      },
+                      {
+                          "NgayDaoHan":  "2026-06-25",
+                          "NgayVay":  "2026-05-21",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM404270",
+                          "SoKhung":  "SK943753",
+                          "GhiChu":  "",
+                          "TrangThai":  "Da tat toan",
+                          "SoTienVay":  5000000,
+                          "MaHopDong":  "HDVT16",
+                          "LaiNgayTrenTrieu":  2500,
+                          "MaKH":  "KH23",
+                          "BienSo":  "15-H56 298.47",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 112",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  null,
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2026-05-21",
+                                                  "SoTien":  5000000
+                                              }
+                                          ],
+                          "MaNguon":  null
+                      },
+                      {
+                          "NgayDaoHan":  "2026-06-29",
+                          "NgayVay":  "2026-05-25",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM731045",
+                          "SoKhung":  "SK139958",
+                          "GhiChu":  "",
+                          "TrangThai":  "Dang vay",
+                          "SoTienVay":  10000000,
+                          "MaHopDong":  "HDVT17",
+                          "LaiNgayTrenTrieu":  2500,
+                          "MaKH":  "KH8",
+                          "BienSo":  "15-H69 581.59",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 127",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  null,
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2026-05-25",
+                                                  "SoTien":  10000000
+                                              }
+                                          ],
+                          "MaNguon":  null
+                      },
+                      {
+                          "NgayDaoHan":  "2026-07-02",
+                          "NgayVay":  "2026-05-28",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM980698",
+                          "SoKhung":  "SK933164",
+                          "GhiChu":  "",
+                          "TrangThai":  "Dang vay",
+                          "SoTienVay":  5000000,
+                          "MaHopDong":  "HDVT18",
+                          "LaiNgayTrenTrieu":  2500,
+                          "MaKH":  "KH5",
+                          "BienSo":  "15-H38 122.57",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 140",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  null,
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2026-05-28",
+                                                  "SoTien":  5000000
+                                              }
+                                          ],
+                          "MaNguon":  null
+                      },
+                      {
+                          "NgayDaoHan":  "2026-07-02",
+                          "NgayVay":  "2026-05-28",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM601555",
+                          "SoKhung":  "SK491050",
+                          "GhiChu":  "",
+                          "TrangThai":  "Dang vay",
+                          "SoTienVay":  10000000,
+                          "MaHopDong":  "HDVT19",
+                          "LaiNgayTrenTrieu":  2500,
+                          "MaKH":  "KH10",
+                          "BienSo":  "15-H42 606.25",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 154",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  null,
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2026-05-28",
+                                                  "SoTien":  10000000
+                                              }
+                                          ],
+                          "MaNguon":  null
+                      },
+                      {
+                          "NgayDaoHan":  "2026-07-04",
+                          "NgayVay":  "2026-05-30",
+                          "LoaiTaiSan":  "Xe m�y",
+                          "SoMay":  "SM648133",
+                          "SoKhung":  "SK316800",
+                          "GhiChu":  "",
+                          "TrangThai":  "Da tat toan",
+                          "SoTienVay":  5000000,
+                          "MaHopDong":  "HDVT20",
+                          "LaiNgayTrenTrieu":  2000,
+                          "MaKH":  "KH11",
+                          "BienSo":  "15-H25 285.72",
+                          "HinhThucLai":  "Lãi cố định",
+                          "TenTaiSan":  "Honda Vision 129",
+                          "LichSuNguon":  [
+                                              {
+                                                  "MaNguon":  null,
+                                                  "NgayKetThuc":  null,
+                                                  "NgayBatDau":  "2026-05-30",
+                                                  "SoTien":  5000000
+                                              }
+                                          ],
+                          "MaNguon":  null
+                      }
+                  ],
+    "capitalSources":  [
+                           {
+                               "MaNguon":  "NGUON_TU_CO",
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  "Vốn Tự Có"
+                           },
+                           {
+                               "MaNguon":  "VAY_NGAN_HANG",
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  139000000,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0.01,
+                               "TenNguon":  "Vay Ngân Hàng"
+                           },
+                           {
+                               "MaNguon":  "VAY_THE_TIN_DUNG_TECHCOMBANK",
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  41000000,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0.017,
+                               "TenNguon":  "Vay Ngân Hàng Techcombank"
+                           },
+                           {
+                               "MaNguon":  "VAY_THE_TIN_DUNG_VPBANK",
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  20000000,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0.017,
+                               "TenNguon":  "Vay Ngân Hàng VPBank"
+                           },
+                           {
+                               "MaNguon":  null,
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  null
+                           },
+                           {
+                               "MaNguon":  null,
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  null
+                           },
+                           {
+                               "MaNguon":  null,
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  null
+                           },
+                           {
+                               "MaNguon":  null,
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  null
+                           },
+                           {
+                               "MaNguon":  null,
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  null
+                           },
+                           {
+                               "MaNguon":  null,
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  null
+                           },
+                           {
+                               "MaNguon":  null,
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  null
+                           },
+                           {
+                               "MaNguon":  null,
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  null
+                           },
+                           {
+                               "MaNguon":  null,
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  null
+                           },
+                           {
+                               "MaNguon":  null,
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  null
+                           },
+                           {
+                               "MaNguon":  null,
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  null
+                           },
+                           {
+                               "MaNguon":  null,
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  null
+                           },
+                           {
+                               "MaNguon":  null,
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  null
+                           },
+                           {
+                               "MaNguon":  null,
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  null
+                           },
+                           {
+                               "MaNguon":  null,
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  null
+                           },
+                           {
+                               "MaNguon":  null,
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  null
+                           },
+                           {
+                               "MaNguon":  null,
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  null
+                           },
+                           {
+                               "MaNguon":  null,
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  null
+                           },
+                           {
+                               "MaNguon":  null,
+                               "GhiChu":  "",
+                               "LichSuBienDong":  [
+                                                      {
+                                                          "Ngay":  "2025-01-01",
+                                                          "SoTien":  0,
+                                                          "NoiDung":  "Khởi tạo nguồn vốn"
+                                                      }
+                                                  ],
+                               "LaiSuatThang":  0,
+                               "TenNguon":  null
+                           }
+                       ],
+    "payments":  [
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "DaNop",
+                         "MaHopDong":  "HDVT1",
+                         "SoTienTra":  375000,
+                         "NguoiThuHo":  "",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1001",
+                         "NgayThanhToan":  "2026-06-03",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "DaNop",
+                         "MaHopDong":  "HDVT2",
+                         "SoTienTra":  1500000,
+                         "NguoiThuHo":  "",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1002",
+                         "NgayThanhToan":  "2026-07-05",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "DaNop",
+                         "MaHopDong":  "HDVT2",
+                         "SoTienTra":  5000000,
+                         "NguoiThuHo":  "",
+                         "LoaiThanhToan":  "Trả gốc",
+                         "MaThanhToan":  "PM1003",
+                         "NgayThanhToan":  "2026-07-20",
+                         "GhiChu":  "Gốc đợt 1"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "NhanVienGiu",
+                         "MaHopDong":  "HDVT3",
+                         "SoTienTra":  520378,
+                         "NguoiThuHo":  "Nguyễn Văn Nam",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1004",
+                         "NgayThanhToan":  "2026-07-08",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "DaNop",
+                         "MaHopDong":  "HDVT4",
+                         "SoTienTra":  375000,
+                         "NguoiThuHo":  "",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1005",
+                         "NgayThanhToan":  "2026-07-10",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "DaNop",
+                         "MaHopDong":  "HDVT5",
+                         "SoTienTra":  375000,
+                         "NguoiThuHo":  "",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1006",
+                         "NgayThanhToan":  "2026-07-11",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "NhanVienGiu",
+                         "MaHopDong":  "HDVT6",
+                         "SoTienTra":  1020000,
+                         "NguoiThuHo":  "Nguyễn Văn Nam",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1007",
+                         "NgayThanhToan":  "2026-07-12",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "DaNop",
+                         "MaHopDong":  "HDVT6",
+                         "SoTienTra":  5000000,
+                         "NguoiThuHo":  "",
+                         "LoaiThanhToan":  "Trả gốc",
+                         "MaThanhToan":  "PM1008",
+                         "NgayThanhToan":  "2026-07-27",
+                         "GhiChu":  "Gốc đợt 1"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "DaNop",
+                         "MaHopDong":  "HDVT7",
+                         "SoTienTra":  450000,
+                         "NguoiThuHo":  "",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1009",
+                         "NgayThanhToan":  "2026-07-13",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "DaNop",
+                         "MaHopDong":  "HDVT8",
+                         "SoTienTra":  1125000,
+                         "NguoiThuHo":  "",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1010",
+                         "NgayThanhToan":  "2026-07-14",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "NhanVienGiu",
+                         "MaHopDong":  "HDVT9",
+                         "SoTienTra":  375000,
+                         "NguoiThuHo":  "Nguyễn Văn Nam",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1011",
+                         "NgayThanhToan":  "2026-07-15",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "DaNop",
+                         "MaHopDong":  "HDVT10",
+                         "SoTienTra":  750000,
+                         "NguoiThuHo":  "",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1012",
+                         "NgayThanhToan":  "2026-07-16",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "DaNop",
+                         "MaHopDong":  "HDVT10",
+                         "SoTienTra":  2500000,
+                         "NguoiThuHo":  "",
+                         "LoaiThanhToan":  "Trả gốc",
+                         "MaThanhToan":  "PM1013",
+                         "NgayThanhToan":  "2026-07-31",
+                         "GhiChu":  "Gốc đợt 1"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "DaNop",
+                         "MaHopDong":  "HDVT11",
+                         "SoTienTra":  750000,
+                         "NguoiThuHo":  "",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1014",
+                         "NgayThanhToan":  "2026-06-17",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "NhanVienGiu",
+                         "MaHopDong":  "HDVT12",
+                         "SoTienTra":  750000,
+                         "NguoiThuHo":  "Nguyễn Văn Nam",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1015",
+                         "NgayThanhToan":  "2026-06-18",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "DaNop",
+                         "MaHopDong":  "HDVT13",
+                         "SoTienTra":  1200000,
+                         "NguoiThuHo":  "",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1016",
+                         "NgayThanhToan":  "2026-07-20",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "DaNop",
+                         "MaHopDong":  "HDVT14",
+                         "SoTienTra":  0,
+                         "NguoiThuHo":  "",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1017",
+                         "NgayThanhToan":  "2026-01-20",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "DaNop",
+                         "MaHopDong":  "HDVT14",
+                         "SoTienTra":  250000,
+                         "NguoiThuHo":  "",
+                         "LoaiThanhToan":  "Trả gốc",
+                         "MaThanhToan":  "PM1018",
+                         "NgayThanhToan":  "2026-02-04",
+                         "GhiChu":  "Gốc đợt 1"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "NhanVienGiu",
+                         "MaHopDong":  "HDVT15",
+                         "SoTienTra":  300000,
+                         "NguoiThuHo":  "Nguyễn Văn Nam",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1019",
+                         "NgayThanhToan":  "2026-06-20",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "DaNop",
+                         "MaHopDong":  "HDVT16",
+                         "SoTienTra":  375000,
+                         "NguoiThuHo":  "",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1020",
+                         "NgayThanhToan":  "2026-06-20",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "DaNop",
+                         "MaHopDong":  "HDVT17",
+                         "SoTienTra":  750000,
+                         "NguoiThuHo":  "",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1021",
+                         "NgayThanhToan":  "2026-06-24",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "NhanVienGiu",
+                         "MaHopDong":  "HDVT18",
+                         "SoTienTra":  375000,
+                         "NguoiThuHo":  "Nguyễn Văn Nam",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1022",
+                         "NgayThanhToan":  "2026-06-27",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "DaNop",
+                         "MaHopDong":  "HDVT18",
+                         "SoTienTra":  1250000,
+                         "NguoiThuHo":  "",
+                         "LoaiThanhToan":  "Trả gốc",
+                         "MaThanhToan":  "PM1023",
+                         "NgayThanhToan":  "2026-07-12",
+                         "GhiChu":  "Gốc đợt 1"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "DaNop",
+                         "MaHopDong":  "HDVT19",
+                         "SoTienTra":  750000,
+                         "NguoiThuHo":  "",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1024",
+                         "NgayThanhToan":  "2026-06-27",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     },
+                     {
+                         "TienKhuyenMai":  0,
+                         "TrangThaiThu":  "DaNop",
+                         "MaHopDong":  "HDVT20",
+                         "SoTienTra":  300000,
+                         "NguoiThuHo":  "",
+                         "LoaiThanhToan":  "Trả lãi",
+                         "MaThanhToan":  "PM1025",
+                         "NgayThanhToan":  "2026-06-29",
+                         "GhiChu":  "Lãi kỳ đầu"
+                     }
+                 ],
+    "customers":  [
+                      {
+                          "MaKH":  "KH1",
+                          "TenKhachHang":  "Trọng (KHX 1)",
+                          "SoDienThoai":  "0587560719",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH2",
+                          "TenKhachHang":  "A Cường (KHX 2)",
+                          "SoDienThoai":  "0934386286",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH3",
+                          "TenKhachHang":  "Bằng (KHX 3)",
+                          "SoDienThoai":  "0898263358",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH4",
+                          "TenKhachHang":  "Bạn Anh Công Văn (KHX 4)",
+                          "SoDienThoai":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH5",
+                          "TenKhachHang":  "Minh Quyến (KHX 5)",
+                          "SoDienThoai":  "0924249026",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH6",
+                          "TenKhachHang":  "Đạt (KHX 6)",
+                          "SoDienThoai":  "0366744487",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH7",
+                          "TenKhachHang":  "Hiểu (KHX 8)",
+                          "SoDienThoai":  "0967213629",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH8",
+                          "TenKhachHang":  "Trần Đình Cương (KHX 9)",
+                          "SoDienThoai":  "0876335773",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH9",
+                          "TenKhachHang":  "Hiếu Mb (KHX 10)",
+                          "SoDienThoai":  "0772348739",
+                          "DiaChi":  "JG6M+77C, Tam Cường, Vĩnh Bảo, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH10",
+                          "TenKhachHang":  "Nguyễn Văn Ba (KHX 11)",
+                          "SoDienThoai":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH11",
+                          "TenKhachHang":  "Nguyễn Thành Luân (KHX12)",
+                          "SoDienThoai":  "0562186268",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH12",
+                          "TenKhachHang":  "SH mode (KHX 13)",
+                          "SoDienThoai":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH13",
+                          "TenKhachHang":  "Ngô Quan Kiên (KHX 14)",
+                          "SoDienThoai":  "0523422886",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH14",
+                          "TenKhachHang":  "Phạm Anh Hùng (KHX 15)",
+                          "SoDienThoai":  "0326233193",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH15",
+                          "TenKhachHang":  "Phạm Trung Kiên (KHX 16)",
+                          "SoDienThoai":  "0795639445",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH16",
+                          "TenKhachHang":  "Anh Nghĩa (Vinhome) (KHX 17)",
+                          "SoDienThoai":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH17",
+                          "TenKhachHang":  "Hiếu LG",
+                          "SoDienThoai":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH18",
+                          "TenKhachHang":  "Công Văn (KHX 18)",
+                          "SoDienThoai":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH19",
+                          "TenKhachHang":  "Cường Cá (KHX19)",
+                          "SoDienThoai":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH20",
+                          "TenKhachHang":  "Đoàn Thế Vinh (KHX 20)",
+                          "SoDienThoai":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH21",
+                          "TenKhachHang":  "Nghĩa Vinhome",
+                          "SoDienThoai":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH22",
+                          "TenKhachHang":  "LAPTOP",
+                          "SoDienThoai":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      },
+                      {
+                          "MaKH":  "KH23",
+                          "TenKhachHang":  "Hoang Long LG",
+                          "SoDienThoai":  "",
+                          "DiaChi":  "Tiên Lãng, Hải Phòng, Việt Nam",
+                          "GhiChu":  ""
+                      }
+                  ]
+}

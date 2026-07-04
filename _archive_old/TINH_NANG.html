@@ -1,0 +1,415 @@
+﻿<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hướng Dẫn Sử Dụng - Quản Lý Vốn CV (VIP Offline)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600&amp;display=swap');
+    
+    :root {
+      --primary: #10b981;
+    }
+    
+    body {
+      font-family: 'Inter', system_ui, sans-serif;
+    }
+    
+    .font-display {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-weight: 600;
+    }
+
+    .section {
+      scroll-margin-top: 80px;
+    }
+
+    .nav-link {
+      transition: all 0.2s ease;
+    }
+    
+    .nav-link:hover {
+      color: #10b981;
+      transform: translateX(4px);
+    }
+
+    .feature-card {
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .feature-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+    }
+
+    .step-number {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #10b981;
+      color: white;
+      font-weight: 700;
+      font-size: 13px;
+      border-radius: 9999px;
+    }
+
+    table {
+      border-collapse: collapse;
+    }
+    
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    
+    th {
+      background: #f8fafc;
+      font-weight: 600;
+      font-size: 13px;
+      color: #334155;
+    }
+
+    .demo-badge {
+      background: #fefce8;
+      color: #854d0e;
+      font-size: 11px;
+      padding: 1px 8px;
+      border-radius: 9999px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+  <!-- Top Navigation -->
+  <nav class="bg-white border-b border-slate-200 sticky top-0 z-50">
+    <div class="max-w-screen-xl mx-auto px-6">
+      <div class="flex items-center justify-between h-16">
+        <div class="flex items-center gap-x-3">
+          <div class="w-9 h-9 bg-emerald-600 rounded-2xl flex items-center justify-center text-white shadow-inner">
+            <i class="fa-solid fa-wallet text-xl"></i>
+          </div>
+          <div>
+            <div class="font-semibold text-xl tracking-tighter">Quản Lý Vốn CV</div>
+            <div class="text-[10px] text-emerald-600 font-medium -mt-1">VIP OFFLINE</div>
+          </div>
+        </div>
+        
+        <div class="flex items-center gap-x-2 text-sm">
+          <a href="Quản-Lý-Vốn-CV-Full.html" target="_blank" 
+             class="inline-flex items-center gap-x-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 transition text-white text-sm font-semibold rounded-2xl shadow-sm">
+            <i class="fa-solid fa-play mr-1.5"></i>
+            <span>Mở ứng dụng</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <div class="max-w-screen-xl mx-auto px-6 py-8">
+    <!-- Header -->
+    <div class="mb-10">
+      <div class="inline-flex items-center gap-x-2 bg-emerald-100 text-emerald-700 px-3 py-1 rounded-3xl text-xs font-bold tracking-wider mb-3">
+        <div class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+        BẢN CHUẨN OFFLINE
+      </div>
+      <h1 class="text-4xl font-semibold tracking-tighter">Hướng Dẫn Sử Dụng<br>Ứng Dụng Quản Lý Vốn CV</h1>
+      <p class="mt-3 text-lg text-slate-600 max-w-md">Phiên bản VIP đầy đủ tính năng • 100% Offline • Không cần đăng nhập</p>
+      
+      <div class="flex items-center gap-x-3 mt-6">
+        <div class="flex -space-x-1">
+          <div class="w-6 h-6 bg-slate-300 rounded-full border border-white"></div>
+          <div class="w-6 h-6 bg-emerald-300 rounded-full border border-white"></div>
+          <div class="w-6 h-6 bg-amber-300 rounded-full border border-white"></div>
+        </div>
+        <span class="text-sm text-slate-500">Phiên bản dành cho hộ kinh doanh cho vay &amp; tiệm cầm đồ</span>
+      </div>
+    </div>
+
+    <!-- Quick Navigation -->
+    <div class="flex flex-wrap gap-2 mb-10">
+      <a href="#gioi-thieu" class="px-4 py-1.5 text-sm font-medium rounded-3xl bg-white border hover:bg-slate-50">Giới thiệu</a>
+      <a href="#cach-chay" class="px-4 py-1.5 text-sm font-medium rounded-3xl bg-white border hover:bg-slate-50">Cách chạy</a>
+      <a href="#dashboard" class="px-4 py-1.5 text-sm font-medium rounded-3xl bg-white border hover:bg-slate-50">Dashboard</a>
+      <a href="#nguon-von" class="px-4 py-1.5 text-sm font-medium rounded-3xl bg-white border hover:bg-slate-50">Nguồn Vốn</a>
+      <a href="#hop-dong" class="px-4 py-1.5 text-sm font-medium rounded-3xl bg-white border hover:bg-slate-50">Hợp đồng</a>
+      <a href="#demo" class="px-4 py-1.5 text-sm font-medium rounded-3xl bg-white border hover:bg-slate-50">Dữ liệu Demo</a>
+    </div>
+
+    <!-- 1. Giới thiệu -->
+    <section id="gioi-thieu" class="section mb-14">
+      <h2 class="text-2xl font-semibold tracking-tight mb-4">1. Giới thiệu</h2>
+      <div class="prose max-w-none text-slate-600">
+        <p>Ứng dụng <strong>Quản Lý Vốn CV</strong> là công cụ chuyên nghiệp dành cho người cho vay, tiệm cầm đồ, hoặc cá nhân quản lý nhiều nguồn vốn vay.</p>
+        
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+          <div class="bg-white border rounded-3xl p-5">
+            <div class="font-semibold mb-1 flex items-center gap-2"><i class="fa-solid fa-wifi text-emerald-500"></i> 100% Offline</div>
+            <div class="text-sm text-slate-500">Không cần internet sau khi mở lần đầu. Dữ liệu nằm trên máy bạn.</div>
+          </div>
+          <div class="bg-white border rounded-3xl p-5">
+            <div class="font-semibold mb-1 flex items-center gap-2"><i class="fa-solid fa-chart-line text-emerald-500"></i> Quản lý vốn thông minh</div>
+            <div class="text-sm text-slate-500">Hỗ trợ nhiều nguồn vốn với lãi suất khác nhau + tính chi phí thực tế.</div>
+          </div>
+          <div class="bg-white border rounded-3xl p-5">
+            <div class="font-semibold mb-1 flex items-center gap-2"><i class="fa-solid fa-mobile-screen text-emerald-500"></i> Tương thích tốt</div>
+            <div class="text-sm text-slate-500">Chạy mượt trên PC và iPhone (hỗ trợ PWA - thêm vào màn hình chính).</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Cách chạy -->
+    <section id="cach-chay" class="section mb-14">
+      <h2 class="text-2xl font-semibold tracking-tight mb-4">2. Cách chạy &amp; Cài đặt</h2>
+      
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="bg-white border rounded-3xl p-6">
+          <div class="font-semibold mb-3">Trên máy tính (PC)</div>
+          <ol class="list-decimal pl-5 space-y-1.5 text-sm">
+            <li>Double-click file <code class="bg-slate-100 px-1 rounded">Quản-Lý-Vốn-CV-Full.html</code></li>
+            <li>Chờ 2–3 giây để tải (toàn bộ code trong 1 file).</li>
+            <li>Khuyến nghị dùng <strong>Chrome</strong> hoặc <strong>Edge</strong> mới nhất.</li>
+            <li>Lần đầu nên <strong>Ctrl + Shift + R</strong> (hard reload).</li>
+          </ol>
+        </div>
+        
+        <div class="bg-white border rounded-3xl p-6">
+          <div class="font-semibold mb-3">Trên iPhone (dùng như app thật)</div>
+          <ol class="list-decimal pl-5 space-y-1.5 text-sm">
+            <li>Mở file bằng <strong>Safari</strong>.</li>
+            <li>Nhấn nút <strong>Chia sẻ</strong> (hình vuông có mũi tên lên).</li>
+            <li>Chọn <strong>"Thêm vào Màn hình chính"</strong>.</li>
+            <li>Sau đó có icon riêng, chạy full screen như app thật (PWA).</li>
+          </ol>
+          <div class="mt-3 text-xs bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-2xl inline-block">
+            <i class="fa-solid fa-lightbulb mr-1"></i> Khuyến khích dùng chế độ PWA trên điện thoại.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Giao diện -->
+    <section id="giao-dien" class="section mb-14">
+      <h2 class="text-2xl font-semibold tracking-tight mb-4">3. Giao diện &amp; Menu chính</h2>
+      
+      <div class="bg-white border rounded-3xl p-6">
+        <p class="mb-4 text-sm text-slate-600">Ứng dụng có <strong>Sidebar bên trái</strong> (menu) và khu vực nội dung bên phải.</p>
+        
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div class="border rounded-2xl p-3 text-sm"><span class="font-semibold">Tổng quan Dashboard</span><br><span class="text-xs text-slate-500">Màn hình mặc định</span></div>
+          <div class="border rounded-2xl p-3 text-sm"><span class="font-semibold">Khách hàng</span></div>
+          <div class="border rounded-2xl p-3 text-sm"><span class="font-semibold">Nguồn Vốn</span></div>
+          <div class="border rounded-2xl p-3 text-sm"><span class="font-semibold">Hợp đồng</span></div>
+          <div class="border rounded-2xl p-3 text-sm"><span class="font-semibold">Nhật ký dòng tiền / Thu hộ</span></div>
+          <div class="border rounded-2xl p-3 text-sm"><span class="font-semibold">Cài đặt &amp; Sao lưu</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Tính năng chi tiết -->
+    <section id="tinh-nang" class="section mb-14">
+      <h2 class="text-2xl font-semibold tracking-tight mb-4">4. Tính năng chi tiết (Hướng dẫn từng bước)</h2>
+      
+      <!-- Dashboard -->
+      <div class="mb-10">
+        <div class="flex items-center gap-x-3 mb-3">
+          <div class="w-7 h-7 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center flex-shrink-0">
+            <i class="fa-solid fa-chart-pie"></i>
+          </div>
+          <h3 class="font-semibold text-xl">4.1 Dashboard Tổng quan</h3>
+        </div>
+        
+        <div class="bg-white border rounded-3xl p-6">
+          <p class="mb-4">Khi mở ứng dụng bạn sẽ thấy ngay <strong>4 thẻ lớn</strong> ở trên cùng:</p>
+          
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+            <div class="border p-4 rounded-2xl">
+              <div class="font-semibold">TỔNG VỐN ĐI VAY</div>
+              <div class="text-xs text-slate-500">Tổng số tiền đang cho vay ra</div>
+            </div>
+            <div class="border p-4 rounded-2xl">
+              <div class="font-semibold">LỢI NHUẬN RÒNG THỰC TẾ</div>
+              <div class="text-xs text-slate-500">Lãi thực nhận sau khi trừ chi phí vốn</div>
+            </div>
+            <div class="border p-4 rounded-2xl">
+              <div class="font-semibold">PHÍ LÃI NGUỒN ĐI VAY</div>
+              <div class="text-xs text-slate-500">Chi phí lãi bạn phải trả cho các nguồn vốn</div>
+            </div>
+            <div class="border p-4 rounded-2xl">
+              <div class="font-semibold">TỔNG LÃI CÒN NỢ</div>
+              <div class="text-xs text-slate-500">Lãi khách hàng còn nợ bạn</div>
+            </div>
+          </div>
+          
+          <div class="font-semibold mb-2">Bảng phân tích theo nguồn vốn</div>
+          <p class="text-sm">Hiển thị % vốn đang dùng, lãi phải trả, tiền đã thu, trích quỹ bù theo từng nguồn (Tự có / Vay ngoài / Vay ngân hàng).</p>
+          
+          <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-2xl text-sm">
+            <strong>Mẹo:</strong> Đây là màn hình quan trọng nhất. Nên mở app là xem Dashboard trước để nắm tình hình.
+          </div>
+        </div>
+      </div>
+      
+      <!-- Nguồn Vốn -->
+      <div class="mb-10">
+        <div class="flex items-center gap-x-3 mb-3">
+          <div class="w-7 h-7 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center flex-shrink-0">
+            <i class="fa-solid fa-piggy-bank"></i>
+          </div>
+          <h3 class="font-semibold text-xl">4.2 Quản lý Nguồn Vốn (Rất quan trọng)</h3>
+        </div>
+        
+        <div class="bg-white border rounded-3xl p-6">
+          <p class="mb-3">Ứng dụng cho phép quản lý <strong>nhiều nguồn vốn cùng lúc</strong> với lãi suất khác nhau.</p>
+          
+          <h4 class="font-semibold mb-2">Bước thêm nguồn vốn mới:</h4>
+          <ol class="list-decimal pl-5 text-sm space-y-1 mb-4">
+            <li>Vào menu <strong>Nguồn Vốn</strong></li>
+            <li>Nhấn nút <strong>Thêm nguồn vốn</strong></li>
+            <li>Nhập tên nguồn (ví dụ: Vay Ngân Hàng B), lãi suất tháng, ghi chú</li>
+            <li>Lưu</li>
+          </ol>
+          
+          <h4 class="font-semibold mb-2">Bước điều chỉnh vốn (Tăng / Giảm):</h4>
+          <ol class="list-decimal pl-5 text-sm space-y-1">
+            <li>Trong bảng nguồn vốn, nhấn <strong>Biến động vốn</strong> của nguồn cần chỉnh.</li>
+            <li>Chọn loại: <strong>Tăng vốn</strong> (vay thêm) hoặc <strong>Giảm vốn</strong> (trả bớt).</li>
+            <li>Nhập số tiền + ngày + nội dung giải thích.</li>
+            <li>Lưu → Số dư và lịch sử sẽ tự động cập nhật.</li>
+          </ol>
+        </div>
+      </div>
+      
+      <!-- Hợp đồng -->
+      <div class="mb-10">
+        <div class="flex items-center gap-x-3 mb-3">
+          <div class="w-7 h-7 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center flex-shrink-0">
+            <i class="fa-solid fa-file-contract"></i>
+          </div>
+          <h3 class="font-semibold text-xl">4.3 Quản lý Hợp đồng vay (Cầm đồ / Tín chấp)</h3>
+        </div>
+        
+        <div class="bg-white border rounded-3xl p-6">
+          <p class="mb-3">Đây là tính năng cốt lõi. Hợp đồng hỗ trợ ghi rất chi tiết tài sản đảm bảo.</p>
+          
+          <h4 class="font-semibold mb-2">Bước thêm hợp đồng mới (có tài sản):</h4>
+          <ol class="list-decimal pl-5 text-sm space-y-1.5">
+            <li>Vào menu <strong>Hợp đồng</strong> → bấm <strong>Thêm hợp đồng</strong>.</li>
+            <li>Chọn khách hàng (hoặc thêm khách mới ngay trong form).</li>
+            <li>Nhập Số tiền vay.</li>
+            <li>Nhập <strong>Lãi ngày trên triệu</strong> (ví dụ 2500).</li>
+            <li>Chọn ngày vay và hạn trả.</li>
+            <li>Phần <strong>Tài sản</strong> (rất quan trọng với cầm đồ):
+              <ul class="list-disc pl-5 mt-1 text-xs">
+                <li>Loại tài sản (Xe máy, Điện thoại...)</li>
+                <li>Tên tài sản, Biển kiểm soát, Số khung, Số máy.</li>
+              </ul>
+            </li>
+            <li>Chọn <strong>Nguồn vốn</strong> đang tài trợ hợp đồng này.</li>
+            <li>Lưu.</li>
+          </ol>
+          
+          <div class="mt-5 text-xs bg-emerald-50 border border-emerald-200 p-3 rounded-2xl">
+            <strong>Lưu ý quan trọng:</strong> Luôn chọn đúng nguồn vốn khi tạo hợp đồng mới. Đây là cơ sở để app tính lợi nhuận ròng thực tế cho bạn.
+          </div>
+        </div>
+      </div>
+      
+      <!-- Thu tiền -->
+      <div class="mb-10">
+        <div class="flex items-center gap-x-3 mb-3">
+          <div class="w-7 h-7 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center flex-shrink-0">
+            <i class="fa-solid fa-hand-holding-dollar"></i>
+          </div>
+          <h3 class="font-semibold text-xl">4.4 Ghi nhận Thanh toán &amp; Thu hộ nhân viên</h3>
+        </div>
+        
+        <div class="bg-white border rounded-3xl p-6">
+          <h4 class="font-semibold mb-2">Cách thu tiền từ hợp đồng:</h4>
+          <ol class="list-decimal pl-5 text-sm space-y-1 mb-4">
+            <li>Vào danh sách <strong>Hợp đồng</strong>.</li>
+            <li>Bấm nút <strong>Thu tiền</strong> của hợp đồng cần thu.</li>
+            <li>Chọn loại: <strong>Thu lãi</strong> / <strong>Thu gốc</strong> / <strong>Tất toán</strong>.</li>
+            <li>Nhập số tiền + ghi chú.</li>
+            <li>Chọn trạng thái:
+              <ul class="list-disc pl-5 mt-1">
+                <li><strong>Đã nộp</strong>: tiền về quỹ luôn.</li>
+                <li><strong>Nhân viên giữ</strong>: tiền đang ở nhân viên (sẽ hiện ở bảng thu hộ).</li>
+              </ul>
+            </li>
+            <li>Lưu.</li>
+          </ol>
+          
+          <h4 class="font-semibold mb-2">Duyệt nộp két (rất quan trọng):</h4>
+          <p class="text-sm mb-1">Vào Dashboard hoặc mục <strong>Thu hộ</strong> → bảng "Tiền mặt nhân viên thu hộ đang cầm".</p>
+          <p class="text-sm">Bấm <strong>"Duyệt nộp két"</strong> để chuyển tiền từ nhân viên về quỹ chính thức.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. Demo data -->
+    <section id="demo" class="section mb-14">
+      <h2 class="text-2xl font-semibold tracking-tight mb-4">5. Bảng dữ liệu Demo (rất thực tế)</h2>
+      
+      <p class="mb-4 text-sm">Ứng dụng có sẵn dữ liệu demo với 9 khách hàng và nhiều hợp đồng. Dưới đây là một số ví dụ:</p>
+      
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm border">
+          <thead>
+            <tr>
+              <th>Mã KH</th>
+              <th>Tên khách hàng</th>
+              <th>SĐT</th>
+              <th>Ghi chú</th>
+            </tr>
+          </thead>
+          <tbody class="text-xs">
+            <tr><td>KH1</td><td>Trọng (KHX 1)</td><td>0587560719</td><td>Khách hàng thân thiết</td></tr>
+            <tr><td>KH2</td><td>A Cường (KHX 2)</td><td>0934386286</td><td></td></tr>
+            <tr><td>KH3</td><td>Bằng (KHX 3)</td><td>0898263358</td><td></td></tr>
+            <tr><td>KH5</td><td>Minh Quyền (KHX 5)</td><td>0924249026</td><td></td></tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <div class="mt-6">
+        <div class="font-semibold mb-2 text-sm">Ví dụ một số hợp đồng demo:</div>
+        <table class="w-full text-sm border">
+          <thead>
+            <tr>
+              <th>Mã HĐ</th>
+              <th>Khách</th>
+              <th>Số tiền</th>
+              <th>Lãi/tr/ngày</th>
+              <th>Tài sản</th>
+              <th>Nguồn vốn</th>
+              <th>Trạng thái</th>
+            </tr>
+          </thead>
+          <tbody class="text-xs">
+            <tr>
+              <td>HDVT1</td><td>KH1</td><td>6.000.000</td><td>2.500</td><td>Yamaha Exciter - 15-B1 999.99</td><td>VAY_NGOAI_1</td><td>Đang vay</td>
+            </tr>
+            <tr>
+              <td>HDVT3</td><td>KH3</td><td>5.000.000</td><td>2.500</td><td>—</td><td>NGUON_TU_CO</td><td>Đang vay</td>
+            </tr>
+            <tr>
+              <td>HDVT7</td><td>KH7</td><td>10.000.000</td><td>2.000</td><td>—</td><td>NGUON_TU_CO</td><td><span class="text-emerald-600">Đã tất toán</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="text-center text-xs text-slate-400 mt-12">
+      Tài liệu được tạo dành riêng cho phiên bản offline đầy đủ tính năng của bạn.<br>
+      Mọi dữ liệu chỉ nằm trên máy bạn. Hãy nhớ backup thường xuyên bằng nút Xuất dữ liệu.
+    </div>
+  </div>
+</body>
+</html>

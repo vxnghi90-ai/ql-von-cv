@@ -1,0 +1,1300 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Quản Lý Vốn CV">
+  <meta name="theme-color" content="#0f172a">
+  <title>Ứng Dụng Quản Lý Vốn CV - Cloud Sync</title>
+  
+  <!-- Tailwind CSS CDN dùng để vẽ giao diện cao cấp trực tuyến -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Google Font - Inter -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+    /* Thanh cuộn mượt mà chuẩn hiện đại */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    #app-container {
+      display: flex;
+      min-height: 100vh;
+      width: 100%;
+    }
+    .pulsing-dot {
+      animation: pulse-animation 2s infinite;
+    }
+    @keyframes pulse-animation {
+      0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+      }
+      70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 6px rgba(245, 158, 11, 0);
+      }
+      100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+      }
+    }
+    /* iOS PWA / safe area + mobile friendly */
+    @supports (padding: env(safe-area-inset-bottom)) {
+      .safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 4px); }
+      .bottom-nav { padding-bottom: env(safe-area-inset-bottom); }
+    }
+    .bottom-nav button {
+      min-height: 44px; /* iOS recommended tap target */
+      -webkit-tap-highlight-color: transparent;
+    }
+    .mobile-tab-active {
+      color: #10b981;
+      font-weight: 700;
+    }
+    /* Prevent iOS double-tap zoom on buttons */
+    button, .tab-btn { touch-action: manipulation; }
+    /* Standalone PWA tweaks */
+    @media (display-mode: standalone) {
+      body { padding-top: env(safe-area-inset-top); }
+    }
+    /* iOS: prevent auto-zoom on input focus */
+    @media (max-width: 1023px) {
+      input, select, textarea { font-size: 16px !important; }
+    }
+  </style>
+
+  <!-- Nạp thư viện Firebase Compat thông thường (Cho phép chạy cục bộ dưới dạng file://) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+
+  <!-- KHU VỰC CHỨA TOÀN BỘ GIAO DIỆN PHẦN MỀM -->
+  <div id="app-container">
+    <div style="display:flex;width:100%;height:100vh;align-items:center;justify-content:center;background:#0f172a;color:#fff;flex-direction:column;">
+      <div style="border: 4px solid #10b981; border-top: 4px solid transparent; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 20px;"></div>
+      <h2 style="margin: 0 0 10px 0; font-size: 18px; font-weight: 600;">Đang khởi tạo không gian làm việc...</h2>
+      <p style="color: #94a3b8; font-size: 13px; margin: 0;">Hệ thống đang nạp dữ liệu an toàn offline.</p>
+      <button onclick="try{ if(typeof renderLoginScreen==='function' && localStorage.getItem('user_firebase_config')) renderLoginScreen(); else if(typeof renderApp==='function') renderApp(); }catch(e){}" style="margin-top:16px;padding:8px 16px;border:1px solid #334155;border-radius:8px;background:#1e2937;color:#e2e8f0;font-size:12px;cursor:pointer;">Nếu không tự chuyển • Bấm để thử khởi động (iPhone)</button>
+    </div>
+  </div>
+
+  <!-- STYLE PHỤ TRỢ CHO BIẾN ĐỘNG XOAY XOAY -->
+  <style>
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
+
+  <!-- KỊCH BẢN ĐIỀU KHIỂN TOÀN BỘ LOGIC ỨNG DỤNG -->
+  <script>
+    // Early global error catcher - so stuck loading spinner is replaced by useful message
+    (function installEarlyErrorHandler(){
+      function showFatal(msg) {
+        try {
+          var c = document.getElementById('app-container');
+          if (c) {
+            c.innerHTML = '<div style="padding:16px;color:#f87171;background:#0f172a;font:12px/1.5 monospace;white-space:pre-wrap;position:fixed;inset:0;z-index:99999;overflow:auto;">' +
+              'FATAL JS ERROR - app failed to start\n\n' + msg + '\n\n' +
+              'Please reload the file. If on iPhone, try Add to Home Screen or open in Safari.\n' +
+              'Report the error message above to the developer.' +
+              '</div>';
+          }
+        } catch(_) {}
+      }
+      window.addEventListener('error', function(ev) {
+        showFatal( (ev.message || String(ev)) + '\nLocation: ' + (ev.filename || 'inline') + ':' + (ev.lineno || '?') + (ev.error && ev.error.stack ? '\n' + ev.error.stack : '') );
+      });
+      window.addEventListener('unhandledrejection', function(ev) {
+        var r = ev.reason;
+        showFatal( 'Unhandled promise rejection: ' + (r && (r.message || r) || r) + (r && r.stack ? '\n' + r.stack : '') );
+      });
+    })();
+    const DEFAULT_CUSTOMERS = [
+      { MaKH: "KH1", TenKhachHang: "Trọng (KHX 1)", SoDienThoai: "0587560719", DiaChi: "Tiên Lãng, Hải Phòng, Việt Nam", GhiChu: "Khách hàng thân thiết" },
+      { MaKH: "KH2", TenKhachHang: "A Cường (KHX 2)", SoDienThoai: "0934386286", DiaChi: "Tiên Lãng, Hải Phòng, Việt Nam", GhiChu: "" },
+      { MaKH: "KH3", TenKhachHang: "Bằng (KHX 3)", SoDienThoai: "0898263358", DiaChi: "Tiên Lãng, Hải Phòng, Việt Nam", GhiChu: "" },
+      { MaKH: "KH4", TenKhachHang: "Công Văn (KHX 4)", SoDienThoai: "", DiaChi: "Tiên Lãng, Hải Phòng, Việt Nam", GhiChu: "" },
+      { MaKH: "KH5", TenKhachHang: "Minh Quyến (KHX 5)", SoDienThoai: "0924249026", DiaChi: "Tiên Lãng, Hải Phòng, Việt Nam", GhiChu: "" },
+      { MaKH: "KH6", TenKhachHang: "Đạt (KHX 6)", SoDienThoai: "0366744487", DiaChi: "Tiên Lãng, Hải Phòng, Việt Nam", GhiChu: "" },
+      { MaKH: "KH7", TenKhachHang: "A Đôn (KHX 7)", SoDienThoai: "", DiaChi: "Tiên Lãng, Hải Phòng, Việt Nam", GhiChu: "" },
+      { MaKH: "KH8", TenKhachHang: "Hiểu (KHX 8)", SoDienThoai: "0967213629", DiaChi: "Tiên Lãng, Hải Phòng, Việt Nam", GhiChu: "" },
+      { MaKH: "KH09", TenKhachHang: "Trần Đình Cương (KHX 9)", SoDienThoai: "0876335773", DiaChi: "Tiên Lãng, Hải Phòng, Việt Nam", GhiChu: "" }
+    ];
+
+    const DEFAULT_CONTRACTS = [
+      { MaHopDong: "HDVT1", MaKH: "KH1", SoTienVay: 6000000, LaiNgayTrenTrieu: 2500, NgayVay: "2025-08-13", NgayDaoHan: "2025-09-12", HinhThucLai: "Lãi cố định", TrangThai: "Đang vay", GhiChu: "", LoaiTaiSan: "Xe máy", TenTaiSan: "Yamaha Exciter", BienSo: "15-B1 999.99", SoKhung: "SK123456", SoMay: "SM123456", MaNguon: "VAY_NGOAI_1", LichSuNguon: [{ NgayBatDau: "2025-08-13", NgayKetThuc: null, MaNguon: "VAY_NGOAI_1", SoTien: 6000000 }] },
+      { MaHopDong: "HDVT2", MaKH: "KH2", SoTienVay: 15000000, LaiNgayTrenTrieu: 2500, NgayVay: "2025-08-14", NgayDaoHan: "2025-09-13", HinhThucLai: "Lãi cố định", TrangThai: "Đang vay", GhiChu: "", LoaiTaiSan: "Xe máy", TenTaiSan: "Honda SH 150i", BienSo: "15-H1 888.88", SoKhung: "SK88888", SoMay: "SM88888", MaNguon: "VAY_NGOAI_1", LichSuNguon: [{ NgayBatDau: "2025-08-14", NgayKetThuc: null, MaNguon: "VAY_NGOAI_1", SoTien: 15000000 }] },
+      { MaHopDong: "HDVT3", MaKH: "KH3", SoTienVay: 5000000, LaiNgayTrenTrieu: 2500, NgayVay: "2025-08-15", NgayDaoHan: "2025-09-14", HinhThucLai: "Lãi cố định", TrangThai: "Đang vay", GhiChu: "", MaNguon: "NGUON_TU_CO", LichSuNguon: [{ NgayBatDau: "2025-08-15", NgayKetThuc: null, MaNguon: "NGUON_TU_CO", SoTien: 5000000 }] },
+      { MaHopDong: "HDVT4", MaKH: "KH4", SoTienVay: 10000000, LaiNgayTrenTrieu: 2500, NgayVay: "2025-08-16", NgayDaoHan: "2025-09-15", HinhThucLai: "Lãi cố định", TrangThai: "Đang vay", GhiChu: "", MaNguon: "VAY_NGOAI_1", LichSuNguon: [{ NgayBatDau: "2025-08-16", NgayKetThuc: null, MaNguon: "VAY_NGOAI_1", SoTien: 10000000 }] },
+      { MaHopDong: "HDVT5", MaKH: "KH5", SoTienVay: 5000000, LaiNgayTrenTrieu: 2500, NgayVay: "2025-08-17", NgayDaoHan: "2025-09-16", HinhThucLai: "Lãi cố định", TrangThai: "Đang vay", GhiChu: "", MaNguon: "VAY_NGAN_HANG_A", LichSuNguon: [{ NgayBatDau: "2025-08-17", NgayKetThuc: null, MaNguon: "VAY_NGAN_HANG_A", SoTien: 5000000 }] },
+      { MaHopDong: "HDVT6", MaKH: "KH6", SoTienVay: 10000000, LaiNgayTrenTrieu: 2500, NgayVay: "2025-08-19", NgayDaoHan: "2025-09-18", HinhThucLai: "Lãi cố định", TrangThai: "Đang vay", GhiChu: "", LoaiTaiSan: "Xe máy", TenTaiSan: "Honda Vision", BienSo: "15-H1 555.55", SoKhung: "SK55555", SoMay: "SM55555", MaNguon: "VAY_NGOAI_1", LichSuNguon: [{ NgayBatDau: "2025-08-19", NgayKetThuc: null, MaNguon: "VAY_NGOAI_1", SoTien: 10000000 }] },
+      { MaHopDong: "HDVT7", MaKH: "KH7", SoTienVay: 10000000, LaiNgayTrenTrieu: 2000, NgayVay: "2025-08-20", NgayDaoHan: "2025-09-19", HinhThucLai: "Lãi cố định", TrangThai: "Đã tất toán", NgayTatToan: "2025-09-20", GhiChu: "", MaNguon: "NGUON_TU_CO", LichSuNguon: [{ NgayBatDau: "2025-08-20", NgayKetThuc: "2025-09-20", MaNguon: "NGUON_TU_CO", SoTien: 10000000 }] },
+      { MaHopDong: "HDVT8", MaKH: "KH8", SoTienVay: 10000000, LaiNgayTrenTrieu: 2500, NgayVay: "2025-08-21", NgayDaoHan: "2025-09-20", HinhThucLai: "Lãi cố định", TrangThai: "Đang vay", GhiChu: "", MaNguon: "VAY_NGOAI_1", LichSuNguon: [{ NgayBatDau: "2025-08-21", NgayKetThuc: null, MaNguon: "VAY_NGOAI_1", SoTien: 10000000 }] }
+    ];
+
+    const DEFAULT_PAYMENTS = [
+      { MaThanhToan: "cf27c4af", MaHopDong: "HDVT1", NgayThanhToan: "2025-09-13", SoTienTra: 450000, LoaiThanhToan: "Trả lãi", GhiChu: "Lãi Tháng thứ 1", TrangThaiThu: "DaNop", NguoiThuHo: "", TienKhuyenMai: 0 },
+      { MaThanhToan: "c6dd48c2", MaHopDong: "HDVT2", NgayThanhToan: "2025-09-14", SoTienTra: 1125000, LoaiThanhToan: "Trả lãi", GhiChu: "Lãi Tháng thứ 1", TrangThaiThu: "DaNop", NguoiThuHo: "", TienKhuyenMai: 0 },
+      { MaThanhToan: "44490de8", MaHopDong: "HDVT3", NgayThanhToan: "2025-09-15", SoTienTra: 380000, LoaiThanhToan: "Trả lãi", GhiChu: "Lãi Tháng thứ 1", TrangThaiThu: "NhanVienGiu", NguoiThuHo: "Nguyễn Văn Nam", TienKhuyenMai: 0 },
+      { MaThanhToan: "6d56e17b", MaHopDong: "HDVT4", NgayThanhToan: "2025-09-16", SoTienTra: 750000, LoaiThanhToan: "Trả lãi", GhiChu: "Lãi Tháng thứ 1", TrangThaiThu: "DaNop", NguoiThuHo: "", TienKhuyenMai: 0 },
+      { MaThanhToan: "9af387ab", MaHopDong: "HDVT5", NgayThanhToan: "2025-09-17", SoTienTra: 375000, LoaiThanhToan: "Trả lãi", GhiChu: "Lãi Tháng thứ 1", TrangThaiThu: "NhanVienGiu", NguoiThuHo: "Trần Văn Bắc", TienKhuyenMai: 0 },
+      { MaThanhToan: "4e46193d", MaHopDong: "HDVT7", NgayThanhToan: "2025-09-19", SoTienTra: 600000, LoaiThanhToan: "Trả lãi", GhiChu: "Lãi Tháng thứ 1", TrangThaiThu: "DaNop", NguoiThuHo: "", TienKhuyenMai: 0 },
+      { MaThanhToan: "a68bd5b7", MaHopDong: "HDVT7", NgayThanhToan: "2025-09-20", SoTienTra: 10000000, LoaiThanhToan: "Tất toán", GhiChu: "Trả gốc tất toán", TrangThaiThu: "DaNop", NguoiThuHo: "", TienKhuyenMai: 0 },
+      { MaThanhToan: "08", MaHopDong: "HDVT8", NgayThanhToan: "2025-09-21", SoTienTra: 750000, LoaiThanhToan: "Trả lãi", GhiChu: "Đóng lãi tháng đầu", TrangThaiThu: "DaNop", NguoiThuHo: "", TienKhuyenMai: 0 }
+    ];
+
+    const DEFAULT_CAPITAL_SOURCES = [
+      { MaNguon: "NGUON_TU_CO", TenNguon: "Vốn Tự Có", LaiSuatThang: 0, GhiChu: "Vốn tự tích lũy của cửa hàng, không mất chi phí lãi vay", LichSuBienDong: [{ Ngay: "2025-01-01", SoTien: 150000000, NoiDung: "Vốn tự có ban đầu khởi tạo" }] },
+      { MaNguon: "VAY_NGOAI_1", TenNguon: "Vay Ngoài (Gia đình)", LaiSuatThang: 1.2, GhiChu: "Lãi suất ưu đãi từ người thân, tính lãi trên tổng vốn nhận", LichSuBienDong: [{ Ngay: "2025-08-01", SoTien: 300000000, NoiDung: "Vay nhận đợt đầu" }, { Ngay: "2025-09-01", SoTien: -50000000, NoiDung: "Hoàn trả bớt một phần gốc vay" }] },
+      { MaNguon: "VAY_NGAN_HANG_A", TenNguon: "Vay Ngân Hàng A", LaiSuatThang: 0.85, GhiChu: "Hợp đồng vay thấu chi tín chấp của ngân hàng", LichSuBienDong: [{ Ngay: "2025-08-10", SoTien: 100000000, NoiDung: "Giải ngân khoản vay ngân hàng" }] }
+    ];
+
+    let isLocalStorageBlocked = false;
+
+    function safeGetLocal(key, defaultValue) {
+      try {
+        const val = window.localStorage.getItem(key);
+        if (val) return JSON.parse(val);
+      } catch (e) {
+        console.warn("LocalStorage blocked by browser privacy settings:", e);
+        isLocalStorageBlocked = true;
+      }
+      return defaultValue;
+    }
+
+    function safeSetLocal(key, value) {
+      try {
+        window.localStorage.setItem(key, JSON.stringify(value));
+      } catch (e) {
+        console.warn("LocalStorage write blocked by browser privacy settings:", e);
+        isLocalStorageBlocked = true;
+      }
+    }
+
+    // === HÀM VẼ ICON SVG ===
+    function getIconSVG(name, className = "w-5 h-5") {
+      const icons = {
+        dashboard: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />`,
+        users: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />`,
+        fileText: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />`,
+        creditCard: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />`,
+        dollar: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />`,
+        alert: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />`,
+        clock: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />`,
+        checkCircle: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />`,
+        trash: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />`,
+        edit: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />`,
+        sync: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 19l-2.756-2.756" />`,
+        download: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />`,
+        phone: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.94.725l.548 2.2a1 1 0 01-.321.988l-1.305.98a10.582 10.582 0 004.872 4.872l.98-1.305a1 1 0 01.988-.321l2.2.548a1 1 0 01.725.94V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />`,
+        pin: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />`,
+        info: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />`,
+        chevronRight: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />`,
+        menu: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />`,
+        x: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />`,
+        briefcase: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />`,
+        help: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />`,
+        check: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />`,
+        plus: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />`,
+        database: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />`
+      };
+      return `
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="${className}">
+          ${icons[name] || '<circle cx="12" cy="12" r="10" stroke-width="2"/>'}
+        </svg>
+      `;
+    }
+
+    // === HIỂN THỊ THÔNG BÁO TOAST ===
+    function showNotification(message, type = 'success') {
+      state.notification = { message, type };
+      renderApp();
+      setTimeout(() => {
+        state.notification = null;
+        renderApp();
+      }, 3000);
+    }
+
+    let state = {
+      customers: safeGetLocal('loan_customers', DEFAULT_CUSTOMERS),
+      contracts: safeGetLocal('loan_contracts', DEFAULT_CONTRACTS),
+      payments: safeGetLocal('loan_payments', DEFAULT_PAYMENTS),
+      capitalSources: safeGetLocal('loan_capital_sources', DEFAULT_CAPITAL_SOURCES),
+      activeTab: 'dashboard',
+      searchTerm: '',
+      notification: null,
+      customConfirm: { show: false, title: '', message: '', action: null },
+      customAlert: { show: false, title: '', message: '' },
+      editingCustomer: null,
+      editingContract: null,
+      editingCapitalSource: null,
+      viewingCapitalSourceId: null,
+      cloudConnected: false,
+      isSandbox: false
+    };
+
+    // Đồng bộ thuộc tính cũ nếu thiếu
+    state.contracts.forEach(c => {
+      if (!c.MaNguon) c.MaNguon = "VAY_NGOAI_1";
+      if (!c.LichSuNguon || c.LichSuNguon.length === 0) {
+        c.LichSuNguon = [{ NgayBatDau: c.NgayVay, NgayKetThuc: null, MaNguon: c.MaNguon, SoTien: c.SoTienVay }];
+      }
+    });
+
+    function saveStateOffline() {
+      saveStateOfflineAndRefresh(false);
+    }
+
+    function saveStateOfflineAndRefresh(render = true) {
+      safeSetLocal('loan_customers', state.customers);
+      safeSetLocal('loan_contracts', state.contracts);
+      safeSetLocal('loan_payments', state.payments);
+      safeSetLocal('loan_capital_sources', state.capitalSources);
+      if (render) renderApp();
+    }
+
+    function formatVND(number) {
+      return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(number);
+    }
+
+    function formatDate(dateStr) {
+      if (!dateStr) return "-";
+      const parts = dateStr.split('-');
+      return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateStr;
+    }
+
+    function addMonthsSafe(date, months) {
+      const result = new Date(date);
+      const targetMonth = result.getMonth() + months;
+      result.setMonth(targetMonth);
+      if (result.getMonth() !== (targetMonth % 12 + 12) % 12) {
+        result.setDate(0); 
+      }
+      return result;
+    }
+
+    function calculateStandardDays(startDateStr, endDateStr) {
+      const start = new Date(startDateStr); const end = new Date(endDateStr);
+      if (isNaN(start) || isNaN(end) || end <= start) return 0;
+      let months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+      let tempDate = addMonthsSafe(start, months);
+      if (tempDate > end) { months--; tempDate = addMonthsSafe(start, months); }
+      const diffTime = end.getTime() - tempDate.getTime();
+      return (months * 30) + Math.floor(diffTime / (1000 * 3600 * 24));
+    }
+
+    function calculateCapitalSourceDetails(source) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const txs = [...(source.LichSuBienDong || [])].sort((a, b) => new Date(a.Ngay) - new Date(b.Ngay));
+      let currentCapital = 0; let totalInterestExpense = 0;
+      if (txs.length === 0) return { tongVonHienTai: 0, chiPhiLaiTichLuy: 0, lichSu: [] };
+      let lastDate = txs[0].Ngay;
+      for (let i = 0; i < txs.length; i++) {
+        const tx = txs[i];
+        const daysElapsed = calculateStandardDays(lastDate, tx.Ngay);
+        totalInterestExpense += Math.round(currentCapital * (source.LaiSuatThang / 100) * (daysElapsed / 30));
+        currentCapital += Number(tx.SoTien);
+        lastDate = tx.Ngay;
+      }
+      totalInterestExpense += Math.round(currentCapital * (source.LaiSuatThang / 100) * (calculateStandardDays(lastDate, todayStr) / 30));
+      return { tongVonHienTai: Math.max(0, currentCapital), chiPhiLaiTichLuy: totalInterestExpense, lichSu: txs };
+    }
+
+    function calculateContractInterest(contract) {
+      const today = new Date();
+      let endCalculateDate = contract.TrangThai === 'Đã tất toán' && contract.NgayTatToan ? new Date(contract.NgayTatToan) : today;
+      const endCalStr = endCalculateDate.toISOString().split('T')[0];
+      const soNgayVay = calculateStandardDays(contract.NgayVay, endCalStr);
+      const tongLaiPhatSinh = Math.round((contract.SoTienVay / 1000000) * contract.LaiNgayTrenTrieu * soNgayVay);
+
+      const contractPayments = state.payments.filter(p => p.MaHopDong === contract.MaHopDong);
+      const laiDaTra = contractPayments.filter(p => p.LoaiThanhToan === 'Trả lãi').reduce((sum, p) => sum + Number(p.SoTienTra) + (Number(p.TienKhuyenMai) || 0), 0);
+      const gocDaTra = contractPayments.filter(p => p.LoaiThanhToan === 'Tất toán').reduce((sum, p) => sum + Number(p.SoTienTra), 0);
+      const laiConNo = Math.max(0, tongLaiPhatSinh - laiDaTra);
+      const duNoGocHienTai = Math.max(0, contract.SoTienVay - gocDaTra);
+
+      let chiPhiVonLuyKe = 0;
+      const lichSuNguon = contract.LichSuNguon || [{ NgayBatDau: contract.NgayVay, NgayKetThuc: null, MaNguon: contract.MaNguon, SoTien: contract.SoTienVay }];
+      lichSuNguon.forEach(seg => {
+        const segDays = calculateStandardDays(seg.NgayBatDau, seg.NgayKetThuc ? seg.NgayKetThuc : endCalStr);
+        const source = state.capitalSources.find(s => s.MaNguon === seg.MaNguon) || { LaiSuatThang: 0 };
+        chiPhiVonLuyKe += Math.round(seg.SoTien * (source.LaiSuatThang / 100) * (segDays / 30));
+      });
+
+      let chiPhiVonDaTra = 0;
+      if (tongLaiPhatSinh > 0) chiPhiVonDaTra = Math.round(laiDaTra * (chiPhiVonLuyKe / tongLaiPhatSinh));
+      const activeSeg = lichSuNguon.find(s => s.NgayKetThuc === null) || { MaNguon: contract.MaNguon };
+      const activeSource = state.capitalSources.find(s => s.MaNguon === activeSeg.MaNguon) || { TenNguon: "N/A", LaiSuatThang: 0 };
+
+      return { soNgayVay, tongLaiPhatSinh, laiDaTra, gocDaTra, laiConNo, duNoGocHienTai, chiPhiVonLuyKe, chiPhiVonDaTra, laQuaHan: contract.TrangThai === 'Đang vay' && contract.NgayDaoHan && today > new Date(contract.NgayDaoHan), nguonVon: activeSource.TenNguon, laiSuatDauVao: activeSource.LaiSuatThang, activeMaNguon: activeSeg.MaNguon, lichSuNguon };
+    }
+
+    function getStats() {
+      let stats = { tongVonChoVay: 0, dangVayCount: 0, tatToanCount: 0, quaHanCount: 0, tongLaiConNo: 0, laiThuTrongNgay: 0, tongVonDauVao: 0, tongChiPhiLaiNguon: 0, sourceDetails: {}, tongLaiThucThu: 0, tongLaiKhuyenMai: 0, tongLaiNhanVienGiu: 0, tongGocNhanVienGiu: 0 };
+
+      state.contracts.forEach(contract => {
+        const calc = calculateContractInterest(contract);
+        if (contract.TrangThai === 'Đang vay') {
+          stats.tongVonChoVay += calc.duNoGocHienTai; stats.tongLaiConNo += calc.laiConNo; stats.laiThuTrongNgay += (calc.duNoGocHienTai / 1000000) * contract.LaiNgayTrenTrieu;
+          calc.laQuaHan ? stats.quaHanCount++ : stats.dangVayCount++;
+        } else if (contract.TrangThai === 'Đã tất toán') { stats.tatToanCount++; }
+      });
+
+      state.capitalSources.forEach(src => {
+        const details = calculateCapitalSourceDetails(src);
+        stats.tongVonDauVao += details.tongVonHienTai; stats.tongChiPhiLaiNguon += details.chiPhiLaiTichLuy;
+        let duNoChoVayCuaNguon = 0;
+        state.contracts.forEach(c => { if (c.TrangThai === 'Đang vay') { const activeSeg = (c.LichSuNguon || []).find(seg => seg.NgayKetThuc === null && seg.MaNguon === src.MaNguon); if (activeSeg) duNoChoVayCuaNguon += activeSeg.SoTien; } });
+
+        let laiDaThuCuaNguon = 0;
+        state.payments.forEach(p => {
+          if (p.LoaiThanhToan === 'Trả lãi' && (p.TrangThaiThu === 'DaNop' || !p.TrangThaiThu)) {
+            const c = state.contracts.find(x => x.MaHopDong === p.MaHopDong);
+            if (c) {
+              const calc = calculateContractInterest(c);
+              const targetSeg = (c.LichSuNguon || []).find(seg => seg.MaNguon === src.MaNguon);
+              if (targetSeg && calc.chiPhiVonLuyKe > 0) {
+                const segDays = calculateStandardDays(targetSeg.NgayBatDau, targetSeg.NgayKetThuc ? targetSeg.NgayKetThuc : new Date().toISOString().split('T')[0]);
+                const segCost = Math.round(targetSeg.SoTien * (src.LaiSuatThang / 100) * (segDays / 30));
+                laiDaThuCuaNguon += Math.round(p.SoTienTra * (segCost / calc.chiPhiVonLuyKe));
+              }
+            }
+          }
+        });
+        stats.sourceDetails[src.MaNguon] = { tongVonHienTai: details.tongVonHienTai, chiPhiLaiTichLuy: details.chiPhiLaiTichLuy, duNoChoVay: duNoChoVayCuaNguon, laiDaThuCuaNguon, thieuHut: Math.max(0, details.chiPhiLaiTichLuy - laiDaThuCuaNguon) };
+      });
+
+      state.payments.forEach(p => {
+        if (p.LoaiThanhToan === 'Trả lãi' && (p.TrangThaiThu === 'DaNop' || !p.TrangThaiThu)) stats.tongLaiThucThu += Number(p.SoTienTra);
+        if (p.LoaiThanhToan === 'Trả lãi' && p.TienKhuyenMai) stats.tongLaiKhuyenMai += Number(p.TienKhuyenMai);
+        if (p.TrangThaiThu === 'NhanVienGiu') {
+          if (p.LoaiThanhToan === 'Trả lãi') stats.tongLaiNhanVienGiu += Number(p.SoTienTra);
+          else if (p.LoaiThanhToan === 'Tất toán') stats.tongGocNhanVienGiu += Number(p.SoTienTra);
+        }
+      });
+
+      stats.tongTienNhanVienGiu = stats.tongLaiNhanVienGiu + stats.tongGocNhanVienGiu;
+      stats.loiNhuanRongThucTe = stats.tongLaiThucThu - stats.tongChiPhiLaiNguon;
+      stats.tongThieuHutPhaiBu = Object.values(stats.sourceDetails).reduce((sum, item) => sum + item.thieuHut, 0);
+      return stats;
+    }
+
+    async function executeSave(collectionName, docId, data, offlineCallback) {
+      offlineCallback(); 
+      saveStateOfflineAndRefresh(true);
+      if (state.cloudConnected && window.cloudAPI) {
+        try { await window.cloudAPI.setDoc(collectionName, docId, data); } 
+        catch (e) { console.error("Cloud Sync Failed:", e); }
+      }
+    }
+
+    async function executeDelete(collectionName, docId, offlineCallback) {
+      offlineCallback(); 
+      saveStateOfflineAndRefresh(true);
+      if (state.cloudConnected && window.cloudAPI) {
+        try { await window.cloudAPI.deleteDoc(collectionName, docId); } 
+        catch (e) { console.error("Cloud Delete Failed:", e); }
+      }
+    }
+
+    function processCapitalReduction(sourceId, amount, date, description) {
+      const source = state.capitalSources.find(s => s.MaNguon === sourceId);
+      if (!source) return false;
+      const targetCapital = calculateCapitalSourceDetails(source).tongVonHienTai - amount;
+      if (targetCapital < 0) { showAlert("Lỗi", "Số tiền rút lớn hơn vốn hiện tại của nguồn."); return false; }
+
+      const activeAlloc = state.contracts.filter(c => c.TrangThai === 'Đang vay').reduce((sum, c) => {
+        const seg = (c.LichSuNguon || []).find(s => s.NgayKetThuc === null && s.MaNguon === sourceId);
+        return sum + (seg ? seg.SoTien : 0);
+      }, 0);
+
+      if (targetCapital < activeAlloc) {
+        const overdraft = activeAlloc - targetCapital;
+        const otherSources = state.capitalSources.filter(s => s.MaNguon !== sourceId).map(s => {
+          const alloc = state.contracts.filter(c => c.TrangThai === 'Đang vay').reduce((sum, c) => {
+            const seg = (c.LichSuNguon || []).find(seg => seg.NgayKetThuc === null && seg.MaNguon === s.MaNguon);
+            return sum + (seg ? seg.SoTien : 0);
+          }, 0);
+          return { source: s, available: Math.max(0, calculateCapitalSourceDetails(s).tongVonHienTai - alloc) };
+        }).filter(i => i.available > 0);
+
+        if (otherSources.reduce((s, i) => s + i.available, 0) < overdraft) {
+          showAlert("Quá tải", `Không đủ vốn rảnh rỗi ở các nguồn vốn khác để gánh dư nợ của hợp đồng. Vui lòng nạp thêm vốn!`); return false;
+        }
+
+        let remain = overdraft; let logs = [];
+        state.contracts.forEach(c => {
+          if (c.TrangThai !== 'Đang vay' || remain <= 0) return;
+          const segIdx = (c.LichSuNguon || []).findIndex(s => s.NgayKetThuc === null && s.MaNguon === sourceId);
+          if (segIdx === -1) return;
+          const seg = c.LichSuNguon[segIdx];
+          const move = Math.min(remain, seg.SoTien);
+          if (move <= 0) return;
+
+          seg.NgayKetThuc = date;
+          const newSegs = move < seg.SoTien ? [{ NgayBatDau: date, NgayKetThuc: null, MaNguon: sourceId, SoTien: seg.SoTien - move }] : [];
+          
+          let amountToMove = move;
+          otherSources.forEach(t => {
+            if (t.available <= 0 || amountToMove <= 0) return;
+            const chunk = Math.min(amountToMove, t.available);
+            newSegs.push({ NgayBatDau: date, NgayKetThuc: null, MaNguon: t.source.MaNguon, SoTien: chunk });
+            t.available -= chunk; amountToMove -= chunk; remain -= chunk;
+            logs.push(`HĐ ${c.MaHopDong}: Chuyển ${formatVND(chunk)} sang nguồn ${t.source.TenNguon}`);
+          });
+
+          const updatedC = { ...c, LichSuNguon: [...c.LichSuNguon, ...newSegs] };
+          executeSave('contracts', c.MaHopDong, updatedC, () => { state.contracts = state.contracts.map(x => x.MaHopDong === c.MaHopDong ? updatedC : x); });
+        });
+
+        const updatedSrc = { ...source, LichSuBienDong: [...source.LichSuBienDong, { Ngay: date, SoTien: -amount, NoiDung: description || 'Rút giảm vốn và tự điều phối dòng' }] };
+        executeSave('capital_sources', sourceId, updatedSrc, () => { state.capitalSources = state.capitalSources.map(s => s.MaNguon === sourceId ? updatedSrc : s); });
+        showAlert("Thành công", `Đã tự động rút vốn và điều chuyển hạn mức dư nợ thành công:<br><br>${logs.join('<br>')}`);
+        return true;
+      }
+
+      const updatedSrc = { ...source, LichSuBienDong: [...source.LichSuBienDong, { Ngay: date, SoTien: -amount, NoiDung: description || 'Rút bớt vốn nguồn' }] };
+      executeSave('capital_sources', sourceId, updatedSrc, () => {
+        state.capitalSources = state.capitalSources.map(s => s.MaNguon === sourceId ? updatedSrc : s);
+        showNotification("Ghi giảm vốn thành công!");
+      });
+      return true;
+    }
+
+    function handleSaveCustomer(e) {
+      e.preventDefault(); const form = e.target;
+      const data = { MaKH: form.MaKH.value.toUpperCase(), TenKhachHang: form.TenKhachHang.value.trim(), SoDienThoai: form.SoDienThoai.value.trim(), DiaChi: form.DiaChi.value.trim(), GhiChu: form.GhiChu.value.trim() };
+      if (!data.TenKhachHang) return showAlert("Lỗi", "Tên khách hàng không được để trống!");
+      executeSave('customers', data.MaKH, data, () => {
+        if (state.editingCustomer) { state.customers = state.customers.map(c => c.MaKH === data.MaKH ? data : c); showNotification(`Cập nhật thông tin khách hàng thành công`); } 
+        else { if (state.customers.some(c => c.MaKH === data.MaKH)) return showAlert("Lỗi", "Mã KH đã tồn tại!"); state.customers.push(data); showNotification(`Thêm khách hàng thành công`); }
+      });
+      state.editingCustomer = null; closeModal('customer-modal');
+    }
+
+    function handleDeleteCustomer(maKH) {
+      if (state.contracts.some(c => c.MaKH === maKH)) return showAlert("Lỗi", "Khách hàng đang có hợp đồng vay hoạt động.");
+      showConfirm("Xác nhận xóa", "Bạn có chắc chắn muốn xóa khách hàng này khỏi hệ thống?", () => { executeDelete('customers', maKH, () => { state.customers = state.customers.filter(c => c.MaKH !== maKH); showNotification("Đã xóa khách hàng!"); }); });
+    }
+
+    function handleSaveCapitalSource(e) {
+      e.preventDefault(); const form = e.target;
+      const data = { MaNguon: form.MaNguon.value.toUpperCase().replace(/\s+/g, '_'), TenNguon: form.TenNguon.value.trim(), LaiSuatThang: Number(form.LaiSuatThang.value), GhiChu: form.GhiChu.value.trim() };
+      executeSave('capital_sources', data.MaNguon, data, () => {
+        if (state.editingCapitalSource) { state.capitalSources = state.capitalSources.map(s => s.MaNguon === data.MaNguon ? { ...s, ...data } : s); showNotification(`Cập nhật nguồn vốn thành công`); } 
+        else { if (state.capitalSources.some(s => s.MaNguon === data.MaNguon)) return showAlert("Lỗi", "Mã nguồn đã tồn tại!"); data.LichSuBienDong = [{ Ngay: new Date().toISOString().split('T')[0], SoTien: 0, NoiDung: "Khởi tạo tài khoản nguồn" }]; state.capitalSources.push(data); showNotification(`Thêm tài khoản nguồn thành công`); }
+      });
+      state.editingCapitalSource = null; closeModal('capital-source-modal');
+    }
+
+    function handleDeleteCapitalSource(maNguon) {
+      if (state.contracts.some(c => c.MaNguon === maNguon)) return showAlert("Lỗi", "Nguồn vốn này đang chịu gánh nợ hợp đồng.");
+      if (maNguon === "NGUON_TU_CO") return showAlert("Lỗi", "Nguồn tự có cố định không thể xóa.");
+      showConfirm("Xác nhận xóa", "Xóa nguồn vốn này khỏi hệ thống?", () => { executeDelete('capital_sources', maNguon, () => { state.capitalSources = state.capitalSources.filter(s => s.MaNguon !== maNguon); showNotification("Đã xóa tài khoản nguồn!"); }); });
+    }
+
+    function handleAddCapitalAdjustment(e) {
+      e.preventDefault(); const form = e.target; const amount = Number(form.SoTien.value);
+      if (amount <= 0) return showAlert("Lỗi", "Số tiền không hợp lệ.");
+      if (form.KieuBienDong.value === 'Giam') {
+        processCapitalReduction(state.viewingCapitalSourceId, amount, form.Ngay.value, form.NoiDung.value.trim()); form.reset(); closeModal('capital-adjustment-modal');
+      } else {
+        const src = state.capitalSources.find(s => s.MaNguon === state.viewingCapitalSourceId);
+        if (src) {
+          const updatedSrc = { ...src, LichSuBienDong: [...(src.LichSuBienDong || []), { Ngay: form.Ngay.value, SoTien: amount, NoiDung: form.NoiDung.value.trim() || 'Vay thêm vốn nguồn' }] };
+          executeSave('capital_sources', src.MaNguon, updatedSrc, () => { state.capitalSources = state.capitalSources.map(s => s.MaNguon === src.MaNguon ? updatedSrc : s); showNotification("Đã tăng thêm vốn nguồn!"); });
+          form.reset(); closeModal('capital-adjustment-modal');
+        }
+      }
+    }
+
+    function handleDeleteCapitalAdjustment(index) {
+      showConfirm("Xác nhận xóa", "Xóa dòng lịch sử biến động vốn nguồn này?", () => {
+        const src = state.capitalSources.find(s => s.MaNguon === state.viewingCapitalSourceId);
+        if (src) {
+          const newHist = [...src.LichSuBienDong]; newHist.splice(index, 1);
+          const updatedSrc = { ...src, LichSuBienDong: newHist };
+          executeSave('capital_sources', src.MaNguon, updatedSrc, () => { state.capitalSources = state.capitalSources.map(s => s.MaNguon === src.MaNguon ? updatedSrc : s); showNotification("Xóa biến động thành công!"); });
+        }
+      });
+    }
+
+    function handleSaveContract(e) {
+      e.preventDefault(); const form = e.target;
+      const contractData = {
+        MaHopDong: form.MaHopDong.value.toUpperCase(), MaKH: form.MaKH.value, SoTienVay: Number(form.SoTienVay.value), LaiNgayTrenTrieu: Number(form.LaiNgayTrenTrieu.value), NgayVay: form.NgayVay.value, NgayDaoHan: form.NgayDaoHan.value, HinhThucLai: form.HinhThucLai.value, TrangThai: form.TrangThai.value, GhiChu: form.GhiChu.value.trim(), MaNguon: form.MaNguon.value, LoaiTaiSan: form.LoaiTaiSan.value, TenTaiSan: form.TenTaiSan.value.trim(), BienSo: form.BienSo.value.trim(), SoKhung: form.SoKhung.value.trim(), SoMay: form.SoMay.value.trim()
+      };
+      if (contractData.SoTienVay <= 0) return showAlert("Lỗi", "Số vốn vay không hợp lệ.");
+
+      executeSave('contracts', contractData.MaHopDong, contractData, () => {
+        if (state.editingContract) {
+          const old = state.contracts.find(c => c.MaHopDong === contractData.MaHopDong);
+          if (old && old.MaNguon !== contractData.MaNguon) {
+            const hist = [...(old.LichSuNguon || [])]; const active = hist.find(s => s.NgayKetThuc === null);
+            if (active) active.NgayKetThuc = new Date().toISOString().split('T')[0];
+            hist.push({ NgayBatDau: new Date().toISOString().split('T')[0], NgayKetThuc: null, MaNguon: contractData.MaNguon, SoTien: old.SoTienVay });
+            contractData.LichSuNguon = hist;
+          } else { contractData.LichSuNguon = old ? old.LichSuNguon : [{ NgayBatDau: contractData.NgayVay, NgayKetThuc: null, MaNguon: contractData.MaNguon, SoTien: contractData.SoTienVay }]; }
+          state.contracts = state.contracts.map(c => c.MaHopDong === contractData.MaHopDong ? contractData : c);
+          showNotification("Cập nhật hợp đồng thành công");
+        } else {
+          if (state.contracts.some(c => c.MaHopDong === contractData.MaHopDong)) return showAlert("Lỗi", "Mã HĐ đã tồn tại!");
+          contractData.LichSuNguon = [{ NgayBatDau: contractData.NgayVay, NgayKetThuc: null, MaNguon: contractData.MaNguon, SoTien: contractData.SoTienVay }];
+          state.contracts.push(contractData); showNotification("Mở hợp đồng thành công");
+        }
+      });
+      state.editingContract = null; closeModal('contract-modal');
+    }
+
+    function handleDeleteContract(maHD) {
+      if (state.payments.some(p => p.MaHopDong === maHD)) {
+        showConfirm("Cảnh báo xóa", "Hợp đồng đã có phiếu thu tiền. Xóa hợp đồng sẽ xóa sạch lịch sử đóng tiền liên quan?", () => {
+          const pToDelete = state.payments.filter(p => p.MaHopDong === maHD);
+          pToDelete.forEach(p => executeDelete('payments', p.MaThanhToan, () => { state.payments = state.payments.filter(x => x.MaThanhToan !== p.MaThanhToan) }));
+          executeDelete('contracts', maHD, () => { state.contracts = state.contracts.filter(c => c.MaHopDong !== maHD); showNotification("Xóa hợp đồng hoàn tất"); });
+        });
+      } else { showConfirm("Xác nhận xóa", "Xóa hợp đồng vay này khỏi hệ thống?", () => { executeDelete('contracts', maHD, () => { state.contracts = state.contracts.filter(c => c.MaHopDong !== maHD); showNotification("Đã xóa hợp đồng"); }); }); }
+    }
+
+    function handleSavePayment(e) {
+      e.preventDefault(); const form = e.target;
+      const p = { MaThanhToan: Math.random().toString(36).substring(2, 10), MaHopDong: form.MaHopDong.value, NgayThanhToan: form.NgayThanhToan.value, SoTienTra: Number(form.SoTienTra.value), TienKhuyenMai: Number(form.TienKhuyenMai ? form.TienKhuyenMai.value : 0), LoaiThanhToan: form.LoaiThanhToan.value, GhiChu: form.GhiChu.value.trim(), TrangThaiThu: form.TrangThaiThu.value, NguoiThuHo: form.TrangThaiThu === 'NhanVienGiu' ? form.NguoiThuHo.value.trim() : '' };
+      if (p.SoTienTra <= 0) return showAlert("Lỗi", "Số tiền đóng không hợp lệ");
+
+      executeSave('payments', p.MaThanhToan, p, () => {
+        state.payments.unshift(p);
+        if (p.LoaiThanhToan === 'Tất toán') {
+          const contract = state.contracts.find(c => c.MaHopDong === p.MaHopDong);
+          if (contract) {
+            const updatedC = { ...contract, TrangThai: 'Đã tất toán', NgayTatToan: p.NgayThanhToan };
+            executeSave('contracts', p.MaHopDong, updatedC, () => { state.contracts = state.contracts.map(c => c.MaHopDong === p.MaHopDong ? updatedC : c); });
+          }
+        }
+        showNotification("Đã lập phiếu thu thành công!");
+      });
+      closeModal('payment-modal');
+    }
+
+    function handleDeletePayment(maTT) {
+      showConfirm("Xác nhận xóa", "Xóa phiếu thu giao dịch này?", () => {
+        const p = state.payments.find(x => x.MaThanhToan === maTT);
+        executeDelete('payments', maTT, () => {
+          if (p && p.LoaiThanhToan === 'Tất toán') {
+            const contract = state.contracts.find(c => c.MaHopDong === p.MaHopDong);
+            if (contract) {
+              const updatedC = { ...contract, TrangThai: 'Đang vay', NgayTatToan: null };
+              executeSave('contracts', p.MaHopDong, updatedC, () => { state.contracts = state.contracts.map(c => c.MaHopDong === p.MaHopDong ? updatedC : c); });
+            }
+          }
+          state.payments = state.payments.filter(x => x.MaThanhToan !== maTT); showNotification("Đã xóa phiếu thu!");
+        });
+      });
+    }
+
+    function handleConfirmStaffPaymentNopQuy(maThanhToan) {
+      const p = state.payments.find(x => x.MaThanhToan === maThanhToan);
+      if (p) {
+        const updatedP = { ...p, TrangThaiThu: 'DaNop' };
+        executeSave('payments', maThanhToan, updatedP, () => { state.payments = state.payments.map(x => x.MaThanhToan === maThanhToan ? updatedP : x); showNotification("Xác nhận nộp quỹ thành công!"); });
+      }
+    }
+
+    function openCustomerModal(id=null) { if(window.state){ window.state.editingCustomer = id ? window.state.customers.find(c=>c.MaKH===id) : null; } if(window.renderApp) window.renderApp(); if(window.showModal) window.showModal('customer-modal'); else { const m=document.getElementById('customer-modal'); if(m) m.classList.remove('hidden'); } }
+    function openContractModal(id=null) { if(window.state){ window.state.editingContract = id ? window.state.contracts.find(c=>c.MaHopDong===id) : null; } if(window.renderApp) window.renderApp(); if(window.showModal) window.showModal('contract-modal'); else { const m=document.getElementById('contract-modal'); if(m) m.classList.remove('hidden'); } }
+    function openCapitalSourceModal(id=null) { if(window.state){ window.state.editingCapitalSource = id ? window.state.capitalSources.find(s=>s.MaNguon===id) : null; } if(window.renderApp) window.renderApp(); if(window.showModal) window.showModal('capital-source-modal'); else { const m=document.getElementById('capital-source-modal'); if(m) m.classList.remove('hidden'); } }
+    function openCapitalAdjustmentModal(id) { if(window.state) window.state.viewingCapitalSourceId = id; if(window.renderApp) window.renderApp(); if(window.showModal) window.showModal('capital-adjustment-modal'); else { const m=document.getElementById('capital-adjustment-modal'); if(m) m.classList.remove('hidden'); } }
+    function openPaymentModal(id='') { if(window.renderApp) window.renderApp(); const s = document.getElementById('pm-MaHopDong'); if(s && id){s.value=id; s.dispatchEvent(new Event('change'));} if(window.showModal) window.showModal('payment-modal'); else { const m=document.getElementById('payment-modal'); if(m) m.classList.remove('hidden'); } }
+    function showModal(id) { const m = document.getElementById(id); if(m) m.classList.remove('hidden'); }
+    function closeModal(id) { const m = document.getElementById(id); if(m) m.classList.add('hidden'); }
+
+    function onPaymentContractChange(maHD) {
+      const st = window.state || state;
+      const c = (st.contracts || []).find(x => x.MaHopDong === maHD);
+      const i = document.getElementById('pm-SoTienTra');
+      if (c && i) i.value = document.querySelector('select[name="LoaiThanhToan"]').value === 'Tất toán' ? c.SoTienVay : calculateContractInterest(c).laiConNo;
+    }
+    function onPaymentTypeChange(v) { const c = document.getElementById('pm-discount-container'); if(c) c.classList.toggle('hidden', v === 'Tất toán'); (window.onPaymentContractChange || onPaymentContractChange)(document.getElementById('pm-MaHopDong').value); }
+    function onTrangThaiThuChange(v) { const c = document.getElementById('pm-staff-container'); if(c) c.classList.toggle('hidden', v !== 'NhanVienGiu'); }
+
+    function handleExportJSON() {
+      const a = document.createElement('a');
+      a.href = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ customers: state.customers, contracts: state.contracts, payments: state.payments, capitalSources: state.capitalSources }));
+      a.download = `SaoLuu_ChoVay_${new Date().toISOString().split('T')[0]}.json`;
+      a.click(); showNotification("Đã tải tệp sao lưu!");
+    }
+
+    function handleImportJSON(e) {
+      const r = new FileReader(); r.readAsText(e.target.files[0], "UTF-8");
+      r.onload = (ev) => {
+        try {
+          const d = JSON.parse(ev.target.result);
+          if (d.customers && d.contracts && d.payments) {
+            state.customers = d.customers; state.contracts = d.contracts; state.payments = d.payments; state.capitalSources = d.capitalSources || DEFAULT_CAPITAL_SOURCES;
+            saveStateOfflineAndRefresh(true); showNotification("Đồng bộ file dữ liệu thành công!");
+          }
+        } catch (err) { showAlert("Lỗi", "Định dạng file không tương thích!"); }
+      };
+    }
+
+    function handleResetSystem() {
+      showConfirm("Khôi phục mặc định?", "Toàn bộ dữ liệu hiện tại sẽ bị xóa để đưa về mẫu gốc của Excel?", () => {
+        state.customers = DEFAULT_CUSTOMERS; state.contracts = DEFAULT_CONTRACTS; state.payments = DEFAULT_PAYMENTS; state.capitalSources = DEFAULT_CAPITAL_SOURCES;
+        saveStateOfflineAndRefresh(true); showNotification("Đã đưa hệ thống về dữ liệu mẫu gốc!");
+      });
+    }
+
+    function renderApp() {
+      const container = document.getElementById('app-container');
+      if (!container) return;
+      try {
+      const statsObj = getStats();
+      const staffPending = state.payments.filter(p => p.TrangThaiThu === 'NhanVienGiu');
+
+      let warningHTML = '';
+      if (isLocalStorageBlocked && !state.cloudConnected) {
+        warningHTML = `<div class="bg-rose-100 text-rose-800 p-4 mb-4 rounded-xl text-sm font-bold border border-rose-300">⚠️ CHÚ Ý: Bộ nhớ cục bộ bị trình duyệt chặn. Hãy dán Firebase Config ở mục "Bật kết nối Cloud Sync" để đồng bộ Online!</div>`;
+      }
+
+      let sidebarHTML = `
+        <aside class="bg-slate-900 text-slate-300 w-64 flex flex-col border-r border-slate-800 hidden lg:flex flex-shrink-0">
+          <div class="p-6 flex items-center gap-3 border-b border-slate-800">
+            <div class="bg-emerald-500 p-2 rounded-xl shadow-lg shadow-emerald-500/20">${getIconSVG('dollar', 'w-6 h-6 text-slate-900')}</div>
+            <div><h1 class="font-extrabold text-lg tracking-tight text-white">VAY TIÊU DÙNG</h1><p class="text-xs text-slate-400 font-medium">Hệ Thống Quản Lý VIP</p></div>
+          </div>
+          <div class="px-6 py-4 border-b border-slate-800 bg-slate-950/20">
+            <div class="flex items-center gap-2.5">
+              ${state.cloudConnected 
+                ? `<span class="relative flex h-3 w-3"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span></span>
+                   <div><p class="text-xs font-bold text-emerald-400 tracking-wide">ĐỒNG BỘ ONLINE</p><p class="text-[10px] text-slate-400 mt-0.5">Riêng Tư • Bảo Mật</p></div>`
+                : `<span class="relative flex h-3 w-3"><span class="relative inline-flex rounded-full h-3 w-3 bg-amber-500 pulsing-dot"></span></span>
+                   <div><p class="text-xs font-bold text-amber-500 tracking-wide">CHẠY NGOẠI TUYẾN</p><p class="text-[10px] text-slate-400 mt-0.5">Lưu tại thiết bị</p></div>`
+              }
+            </div>
+            ${window._firebaseAuth && window._firebaseAuth.currentUser ? 
+              `<div class="mt-1.5 text-[10px] text-emerald-300 truncate">${window._firebaseAuth.currentUser.email}</div>
+               <div class="flex gap-2 mt-1">
+                 <button onclick="window.handleLogout && window.handleLogout()" class="text-[10px] text-rose-400 font-bold hover:underline">Đăng xuất</button>
+                 <button onclick="window.handleDisconnectCloud && window.handleDisconnectCloud()" class="text-[10px] text-rose-400/70 font-bold hover:underline">Ngắt Cloud</button>
+               </div>` : 
+              (state.cloudConnected ? `<button onclick="window.handleDisconnectCloud && window.handleDisconnectCloud()" class="text-[10px] text-rose-400 font-bold mt-2 hover:underline">⚠️ Ngắt kết nối Cloud</button>` : `<button onclick="window.renderSetupScreen && window.renderSetupScreen()" class="text-[10px] text-indigo-400 font-bold mt-2 hover:underline">💡 Bật kết nối Cloud Sync</button>`)
+            }
+          </div>
+          <nav class="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
+            <button onclick="if(window.state) window.state.activeTab='dashboard'; if(window.renderApp) window.renderApp();" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${state.activeTab === 'dashboard' ? 'bg-emerald-500 text-slate-900 font-semibold shadow-lg shadow-emerald-500/10' : 'hover:bg-slate-800/60 hover:text-white'}">${getIconSVG('dashboard')} Tổng quan Dashboard</button>
+            <button onclick="if(window.state) window.state.activeTab='customers'; if(window.renderApp) window.renderApp();" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${state.activeTab === 'customers' ? 'bg-emerald-500 text-slate-900 font-semibold shadow-lg shadow-emerald-500/10' : 'hover:bg-slate-800/60 hover:text-white'}">${getIconSVG('users')} Khách hàng <span class="ml-auto bg-slate-800 text-slate-400 text-xs px-2 py-0.5 rounded-full">${state.customers.length}</span></button>
+            <button onclick="if(window.state) window.state.activeTab='capital_sources'; if(window.renderApp) window.renderApp();" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${state.activeTab === 'capital_sources' ? 'bg-emerald-500 text-slate-900 font-semibold shadow-lg shadow-emerald-500/10' : 'hover:bg-slate-800/60 hover:text-white'}">${getIconSVG('database')} Nguồn Vốn <span class="ml-auto bg-slate-800 text-slate-400 text-xs px-2 py-0.5 rounded-full">${state.capitalSources.length}</span></button>
+            <button onclick="if(window.state) window.state.activeTab='contracts'; if(window.renderApp) window.renderApp();" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${state.activeTab === 'contracts' ? 'bg-emerald-500 text-slate-900 font-semibold shadow-lg shadow-emerald-500/10' : 'hover:bg-slate-800/60 hover:text-white'}">${getIconSVG('fileText')} Hợp đồng <span class="ml-auto bg-slate-800 text-slate-400 text-xs px-2 py-0.5 rounded-full">${state.contracts.filter(c=>c.TrangThai==='Đang vay').length}</span></button>
+            <button onclick="if(window.state) window.state.activeTab='payments'; if(window.renderApp) window.renderApp();" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${state.activeTab === 'payments' ? 'bg-emerald-500 text-slate-900 font-semibold shadow-lg shadow-emerald-500/10' : 'hover:bg-slate-800/60 hover:text-white'}">${getIconSVG('creditCard')} Nhật ký đóng tiền</button>
+            <button onclick="if(window.state) window.state.activeTab='settings'; if(window.renderApp) window.renderApp();" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${state.activeTab === 'settings' ? 'bg-emerald-500 text-slate-900 font-semibold shadow-lg shadow-emerald-500/10' : 'hover:bg-slate-800/60 hover:text-white'}">${getIconSVG('sync')} Cài đặt & Sync</button>
+          </nav>
+        </aside>
+      `;
+
+      let headerButtonsHTML = '';
+      if (state.activeTab === 'customers') headerButtonsHTML = `<button onclick="window.openCustomerModal && window.openCustomerModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all">${getIconSVG('plus', 'w-4 h-4')} Thêm Khách Hàng</button>`;
+      else if (state.activeTab === 'capital_sources') headerButtonsHTML = `<button onclick="window.openCapitalSourceModal && window.openCapitalSourceModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all">${getIconSVG('plus', 'w-4 h-4')} Thêm Nguồn Vốn</button>`;
+      else if (state.activeTab === 'contracts') headerButtonsHTML = `<button onclick="window.openContractModal && window.openContractModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all">${getIconSVG('plus', 'w-4 h-4')} Tạo Hợp Đồng</button>`;
+
+      const userEmailShort = (window._firebaseAuth && window._firebaseAuth.currentUser) ? window._firebaseAuth.currentUser.email.split('@')[0] : null;
+      const mobileTopBar = `
+        <div class="lg:hidden -mx-4 -mt-4 mb-3 px-4 py-2 bg-slate-900 text-white flex items-center justify-between text-xs">
+          <div class="font-semibold flex items-center gap-1.5">
+            <span class="text-emerald-400">●</span> VAY TIÊU DÙNG
+            ${userEmailShort ? `<span class="text-emerald-400/70 ml-1">• ${userEmailShort}</span>` : ''}
+          </div>
+          ${userEmailShort ? `<button onclick="window.handleLogout && window.handleLogout();event.stopImmediatePropagation();" class="text-rose-400 text-[10px] font-bold px-2">Đăng xuất</button>` : ''}
+        </div>
+      `;
+      const headerHTML = `
+        ${mobileTopBar}
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+          <div><h2 class="text-2xl font-bold tracking-tight text-slate-900">Hệ Thống Quản Lý VIP</h2><p class="text-slate-500 text-sm">Xử lý tính toán lũy tiến và phân phối bù hụt nguồn vốn.</p></div>
+          <div class="flex flex-wrap items-center gap-2">
+            <input type="text" placeholder="Tìm kiếm nhanh..." value="${state.searchTerm}" oninput="if(window.state) window.state.searchTerm = this.value; if(window.renderApp) window.renderApp();" class="px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 w-44 md:w-60" />
+            ${headerButtonsHTML}
+            <button onclick="window.openPaymentModal && window.openPaymentModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all">${getIconSVG('dollar', 'w-4 h-4')} Đóng Lãi / Tất Toán</button>
+          </div>
+        </div>
+      `;
+
+      let mainContentHTML = '';
+
+      if (state.activeTab === 'dashboard') {
+        let sourcesHTML = '';
+        state.capitalSources.forEach(src => {
+          const det = statsObj.sourceDetails[src.MaNguon] || { tongVonHienTai: 0, chiPhiLaiTichLuy: 0, duNoChoVay: 0, laiDaThuCuaNguon: 0, thieuHut: 0 };
+          const nhanRoi = Math.max(0, det.tongVonHienTai - det.duNoChoVay);
+          const percent = det.tongVonHienTai > 0 ? Math.round((det.duNoChoVay / det.tongVonHienTai) * 100) : 0;
+          sourcesHTML += `
+            <div class="bg-slate-50 border border-slate-250 rounded-2xl p-4">
+              <div class="flex justify-between items-center"><span class="font-bold text-sm">${src.TenNguon}</span><span class="text-xs font-semibold text-slate-500">Lãi đi vay: ${src.LaiSuatThang}%/th</span></div>
+              <div class="mt-3">
+                <div class="flex justify-between text-[10px] text-slate-400 mb-1"><span>Giải ngân: ${percent}%</span><span>Nhàn rỗi: ${formatVND(nhanRoi)}</span></div>
+                <div class="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden"><div class="bg-emerald-500 h-1.5 rounded-full" style="width: ${percent}%"></div></div>
+              </div>
+              <div class="mt-4 pt-3 border-t border-slate-200/60 space-y-2 text-xs">
+                <div class="flex justify-between text-slate-500"><span>Phí lãi nguồn:</span><span class="font-bold text-slate-800">${formatVND(det.chiPhiLaiTichLuy)}</span></div>
+                <div class="flex justify-between text-slate-500"><span>Thu từ khách:</span><span class="font-semibold text-slate-700">${formatVND(det.laiDaThuCuaNguon)}</span></div>
+                <div class="flex justify-between border-t border-dashed pt-1.5"><span class="font-bold text-slate-800">Trích quỹ bù:</span>${det.thieuHut > 0 ? `<span class="font-extrabold text-rose-600 animate-pulse">-${formatVND(det.thieuHut)}</span>` : `<span class="font-extrabold text-emerald-600">Ổn định ✓</span>`}</div>
+              </div>
+            </div>`;
+        });
+
+        let staffHTML = '';
+        if (staffPending.length > 0) {
+          let rows = '';
+          staffPending.forEach(pay => {
+            const contract = state.contracts.find(c => c.MaHopDong === pay.MaHopDong);
+            const customer = contract ? state.customers.find(cust => cust.MaKH === contract.MaKH) : null;
+            rows += `<tr class="border-t hover:bg-amber-100/30"><td class="py-3 font-bold">${pay.MaHopDong}</td><td class="py-3">${customer ? customer.TenKhachHang : 'N/A'}</td><td class="py-3 text-rose-700 font-bold">👤 ${pay.NguoiThuHo}</td><td class="py-3 text-xs text-slate-500">${formatDate(pay.NgayThanhToan)}</td><td class="py-3 font-extrabold text-slate-900 text-right">${formatVND(pay.SoTienTra)}</td><td class="py-3 text-center"><button onclick="window.handleConfirmStaffPaymentNopQuy && window.handleConfirmStaffPaymentNopQuy('${pay.MaThanhToan}')" class="bg-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm hover:bg-emerald-700 transition-colors">Duyệt nộp két</button></td></tr>`;
+          });
+          staffHTML = `
+            <div class="bg-amber-50 border border-amber-200 rounded-2xl p-6 shadow-sm mb-6 animate-fadeIn">
+              <div class="flex justify-between gap-4 mb-4">
+                <div><h4 class="font-bold text-amber-900 text-base">Tiền mặt nhân viên thu hộ đang cầm</h4><p class="text-xs text-amber-800">Vui lòng đối chiếu bàn giao và nhấn Duyệt nộp két khi nhân viên nộp đủ tiền mặt.</p></div>
+                <div class="bg-amber-100 text-amber-950 px-3 py-1.5 rounded-lg text-xs font-bold">Tổng giữ: ${formatVND(statsObj.tongTienNhanVienGiu)}</div>
+              </div>
+              <table class="w-full text-left text-sm"><tbody class="divide-y divide-amber-100">${rows}</tbody></table>
+            </div>`;
+        }
+
+        let recentsHTML = '';
+        state.payments.slice(0, 5).forEach(pay => {
+          const contract = state.contracts.find(c => c.MaHopDong === pay.MaHopDong);
+          const cust = contract ? state.customers.find(c => c.MaKH === contract.MaKH) : null;
+          recentsHTML += `<tr class="border-t hover:bg-slate-50"><td class="py-3 font-bold text-slate-700">${pay.MaHopDong}</td><td class="py-3 font-medium">${cust ? cust.TenKhachHang : 'N/A'}</td><td class="py-3 text-slate-500 text-xs">${formatDate(pay.NgayThanhToan)}</td><td class="py-3 text-right font-extrabold text-slate-900">${formatVND(pay.SoTienTra)}</td></tr>`;
+        });
+
+        mainContentHTML = `
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between"><div><p class="text-xs font-semibold text-slate-400 uppercase">Tổng vốn đi vay</p><h3 class="text-2xl font-bold text-indigo-700 mt-1">${formatVND(statsObj.tongVonDauVao)}</h3><p class="text-xs text-slate-500 mt-1">Dư nợ cho vay: ${formatVND(statsObj.tongVonChoVay)}</p></div><div class="bg-indigo-50 text-indigo-600 p-3 rounded-xl">${getIconSVG('database')}</div></div>
+            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between"><div><p class="text-xs font-semibold text-emerald-600 uppercase">Lợi nhuận ròng thực tế</p><h3 class="text-2xl font-bold text-emerald-600 mt-1">${formatVND(statsObj.loiNhuanRongThucTe)}</h3><p class="text-xs text-slate-500 mt-1">Lãi gộp đã thu: ${formatVND(statsObj.tongLaiThucThu)}</p></div><div class="bg-emerald-50 text-emerald-600 p-3 rounded-xl">${getIconSVG('dashboard')}</div></div>
+            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between"><div><p class="text-xs font-semibold text-rose-600 uppercase">Phí lãi nguồn đi vay</p><h3 class="text-2xl font-bold text-rose-600 mt-1">${formatVND(statsObj.tongChiPhiLaiNguon)}</h3><p class="text-xs text-slate-500 mt-1">Trích bù nhàn rỗi: ${formatVND(statsObj.tongThieuHutPhaiBu)}</p></div><div class="bg-rose-50 text-rose-600 p-3 rounded-xl">${getIconSVG('briefcase')}</div></div>
+            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between"><div><p class="text-xs font-semibold text-slate-400 uppercase">Tổng lãi còn nợ</p><h3 class="text-2xl font-bold text-amber-600 mt-1">${formatVND(statsObj.tongLaiConNo)}</h3><p class="text-xs text-slate-500 mt-1">Lãi dồn chưa nộp của khách</p></div><div class="bg-amber-50 text-amber-600 p-3 rounded-xl">${getIconSVG('alert')}</div></div>
+          </div>
+          <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-6"><h4 class="font-bold text-slate-800 text-sm uppercase mb-4">Dòng vốn đầu vào & Trích tách chi phí</h4><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">${sourcesHTML}</div></div>
+          ${staffHTML}
+          <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6"><h4 class="font-bold text-slate-800 text-sm uppercase mb-4">Giao dịch thu tiền gần đây</h4><table class="w-full text-sm text-left"><tbody>${recentsHTML}</tbody></table></div>
+        `;
+      } 
+      else if (state.activeTab === 'customers') {
+        const filtered = state.customers.filter(c => c.TenKhachHang.toLowerCase().includes(state.searchTerm.toLowerCase()) || c.MaKH.toLowerCase().includes(state.searchTerm.toLowerCase()));
+        let rows = '';
+        filtered.forEach(cust => {
+          rows += `<tr class="border-t hover:bg-slate-50"><td class="p-4 font-bold text-slate-700">${cust.MaKH}</td><td class="p-4 font-semibold text-slate-900">${cust.TenKhachHang}</td><td class="p-4 text-slate-600">${cust.SoDienThoai}</td><td class="p-4 text-slate-500">${cust.DiaChi}</td><td class="p-4 text-center"><button onclick="window.openCustomerModal && window.openCustomerModal('${cust.MaKH}')" class="text-indigo-600 hover:text-indigo-800 font-semibold px-2">Sửa</button><button onclick="window.handleDeleteCustomer && window.handleDeleteCustomer('${cust.MaKH}')" class="text-rose-600 hover:text-rose-800 font-semibold px-2">Xóa</button></td></tr>`;
+        });
+        mainContentHTML = `<div class="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm"><table class="w-full text-sm text-left"><thead><tr class="bg-slate-50 border-b text-slate-400 font-bold"><th class="p-4 uppercase">Mã KH</th><th class="p-4 uppercase">Họ và Tên</th><th class="p-4 uppercase">Số Điện Thoại</th><th class="p-4 uppercase">Địa chỉ</th><th class="p-4 text-center uppercase">Thao tác</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      }
+      else if (state.activeTab === 'capital_sources') {
+        let rows = '';
+        state.capitalSources.forEach(src => {
+          const det = statsObj.sourceDetails[src.MaNguon] || { tongVonHienTai: 0, duNoChoVay: 0 };
+          rows += `<tr class="border-t hover:bg-slate-50"><td class="p-4 font-mono text-xs font-bold text-slate-400">${src.MaNguon}</td><td class="p-4 font-bold text-slate-800">${src.TenNguon}</td><td class="p-4 font-extrabold text-slate-900 text-right">${formatVND(det.tongVonHienTai)}</td><td class="p-4 text-center"><button onclick="window.openCapitalAdjustmentModal && window.openCapitalAdjustmentModal('${src.MaNguon}')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl text-xs font-bold transition-all">Biến động vốn</button></td><td class="p-4 text-center"><button onclick="window.openCapitalSourceModal && window.openCapitalSourceModal('${src.MaNguon}')" class="text-indigo-600 hover:text-indigo-800 font-semibold px-2">Sửa</button><button onclick="window.handleDeleteCapitalSource && window.handleDeleteCapitalSource('${src.MaNguon}')" class="text-rose-600 hover:text-rose-800 font-semibold px-2">Xóa</button></td></tr>`;
+        });
+        mainContentHTML = `<div class="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm"><table class="w-full text-sm text-left"><thead><tr class="bg-slate-50 border-b text-slate-400 font-bold"><th class="p-4 uppercase">Mã Nguồn</th><th class="p-4 uppercase">Tên Nguồn</th><th class="p-4 text-right uppercase">Vốn Hiện Tại</th><th class="p-4 text-center uppercase">Quản lý dòng tiền</th><th class="p-4 text-center uppercase">Thao tác</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      }
+      else if (state.activeTab === 'contracts') {
+        const filtered = state.contracts.filter(c => c.MaHopDong.toLowerCase().includes(state.searchTerm.toLowerCase()));
+        let rows = '';
+        filtered.forEach(contract => {
+          const cust = state.customers.find(c => c.MaKH === contract.MaKH);
+          const calc = calculateContractInterest(contract);
+          let timeline = '';
+          calc.lichSuNguon.forEach(seg => {
+             const srcObj = state.capitalSources.find(s => s.MaNguon === seg.MaNguon);
+             timeline += `<div class="text-[10px] text-slate-500 flex justify-between gap-1 border-b py-0.5"><span class="font-semibold">${srcObj ? srcObj.TenNguon : 'N/A'}</span><span>${formatVND(seg.SoTien)}</span></div>`;
+          });
+          rows += `<tr class="border-t hover:bg-slate-50"><td class="p-4 font-bold text-slate-900">${contract.MaHopDong}</td><td class="p-4 font-semibold text-slate-700">${cust ? cust.TenKhachHang : ''}</td><td class="p-4 font-bold text-slate-800 text-right">${formatVND(contract.SoTienVay)}</td><td class="p-4"><div class="max-w-[180px] p-1 border rounded bg-slate-50">${timeline}</div></td><td class="p-4 text-rose-600 font-bold text-right">${formatVND(calc.laiConNo)}</td><td class="p-4 text-center"><button onclick="window.openPaymentModal && window.openPaymentModal('${contract.MaHopDong}')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm">Thu tiền</button><button onclick="window.openContractModal && window.openContractModal('${contract.MaHopDong}')" class="text-indigo-600 hover:text-indigo-800 font-semibold ml-3">Sửa</button><button onclick="window.handleDeleteContract && window.handleDeleteContract('${contract.MaHopDong}')" class="text-rose-600 hover:text-rose-800 font-semibold ml-2">Xóa</button></td></tr>`;
+        });
+        mainContentHTML = `<div class="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm"><table class="w-full text-sm text-left"><thead><tr class="bg-slate-50 border-b text-slate-400 font-bold"><th class="p-4 uppercase">Mã Hợp Đồng</th><th class="p-4 uppercase">Khách Hàng</th><th class="p-4 text-right uppercase">Số Tiền Vay</th><th class="p-4 uppercase">Timeline nguồn vốn</th><th class="p-4 text-right uppercase">Khách Nợ Lãi</th><th class="p-4 text-center uppercase">Thao tác</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      }
+      else if (state.activeTab === 'payments') {
+        let rows = '';
+        state.payments.forEach(pay => {
+          rows += `<tr class="border-t hover:bg-slate-50"><td class="p-4 font-bold text-slate-700">${pay.MaHopDong}</td><td class="p-4 text-slate-500">${formatDate(pay.NgayThanhToan)}</td><td class="p-4 font-extrabold text-slate-900 text-right">${formatVND(pay.SoTienTra)}</td><td class="p-4">${pay.TrangThaiThu === 'NhanVienGiu' ? `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">👤 ${pay.NguoiThuHo} giữ</span>` : '<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700">🏢 Đã nộp quỹ</span>'}</td><td class="p-4 text-center"><button onclick="window.handleDeletePayment && window.handleDeletePayment('${pay.MaThanhToan}')" class="text-rose-600 hover:text-rose-800 font-semibold">Xóa</button></td></tr>`;
+        });
+        mainContentHTML = `<div class="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm"><table class="w-full text-sm text-left"><thead><tr class="bg-slate-50 border-b text-slate-400 font-bold"><th class="p-4 uppercase">Mã HĐ</th><th class="p-4 uppercase">Ngày nộp</th><th class="p-4 text-right uppercase">Số tiền đóng</th><th class="p-4 uppercase">Người cầm tiền</th><th class="p-4 text-center uppercase">Thao tác</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      }
+      else if (state.activeTab === 'settings') {
+        const user = (window._firebaseAuth && window._firebaseAuth.currentUser) ? window._firebaseAuth.currentUser : null;
+        mainContentHTML = `
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fadeIn">
+            <div class="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
+              <h3 class="font-bold text-slate-900 text-lg mb-2">Đồng Bộ & Sao Lưu JSON</h3>
+              <p class="text-slate-500 text-sm mb-4">Bạn có thể tải tệp JSON về máy tính để sao lưu offline an toàn.</p>
+              <button onclick="window.handleExportJSON && window.handleExportJSON()" class="bg-slate-900 hover:bg-slate-800 text-white font-medium text-sm px-6 py-2.5 rounded-xl mr-2">Tải tệp JSON</button>
+              <input type="file" accept=".json" onchange="window.handleImportJSON && window.handleImportJSON(event)" class="mt-4 block text-xs" />
+            </div>
+            <div class="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
+              <h3 class="font-bold text-rose-700 text-lg mb-2">Đưa hệ thống về dữ liệu mẫu</h3>
+              <p class="text-slate-500 text-sm mb-6">Xóa trắng toàn bộ dữ liệu tự thêm hiện tại để nạp lại dữ liệu gốc từ Excel.</p>
+              <button onclick="window.handleResetSystem && window.handleResetSystem()" class="text-rose-600 hover:bg-rose-100 font-bold border border-rose-200 px-4 py-2.5 rounded-xl text-sm">Khôi phục mẫu gốc</button>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm md:col-span-2">
+              <h3 class="font-bold text-slate-900 text-lg mb-2">Tài khoản Cloud Sync</h3>
+              ${user ? `
+                <p class="text-sm">Đang đăng nhập: <span class="font-semibold text-emerald-700">${user.email}</span></p>
+                <p class="text-xs text-slate-500 mt-1">Dữ liệu của bạn được đồng bộ real-time qua Firebase (cùng tài khoản trên iPhone sẽ thấy hết).</p>
+                <div class="flex flex-wrap gap-2 mt-3">
+                  <button onclick="window.handleLogout && window.handleLogout()" class="px-4 py-2 bg-rose-600 text-white text-sm font-semibold rounded-xl">Đăng xuất (chuyển tài khoản)</button>
+                  <button onclick="window.renderSetupScreen && window.renderSetupScreen()" class="px-4 py-2 bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl">Thay đổi cấu hình Firebase</button>
+                </div>
+              ` : state.cloudConnected ? `
+                <p class="text-sm text-amber-600">Đã kết nối cấu hình Cloud nhưng chưa đăng nhập.</p>
+                <button onclick="if (typeof window.renderLoginScreen==='function') window.renderLoginScreen()" class="mt-2 px-4 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-xl">Đăng nhập / Đăng ký ngay</button>
+              ` : `
+                <p class="text-sm text-slate-500">Chưa bật Cloud Sync. Dùng cùng tài khoản email trên iPhone + PC để dữ liệu tự đồng bộ.</p>
+                <button onclick="window.renderSetupScreen && window.renderSetupScreen()" class="mt-3 px-4 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-xl">Kích hoạt Cloud Sync (dán Firebase Config)</button>
+              `}
+            </div>
+          </div>`;
+      }
+
+      let finalHTML = sidebarHTML + `<main class="flex-1 overflow-y-auto p-4 lg:p-8 w-full pb-20 lg:pb-0">` + warningHTML + headerHTML + mainContentHTML + `</main>`;
+
+      // Mobile bottom navigation (iOS friendly)
+      const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
+      const mobileNavHTML = `
+        <nav class="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-lg safe-bottom bottom-nav">
+          <div class="grid grid-cols-6 text-[10px] font-medium text-slate-600">
+            <button onclick="if(window.state) window.state.activeTab='dashboard'; if(window.renderApp) window.renderApp();" class="tab-btn flex flex-col items-center justify-center py-2 ${state.activeTab==='dashboard' ? 'mobile-tab-active' : 'hover:text-slate-900'}">
+              <span class="w-5 h-5 mb-0.5">${getIconSVG('dashboard','w-5 h-5')}</span>
+              <span>Tổng quan</span>
+            </button>
+            <button onclick="if(window.state) window.state.activeTab='customers'; if(window.renderApp) window.renderApp();" class="tab-btn flex flex-col items-center justify-center py-2 ${state.activeTab==='customers' ? 'mobile-tab-active' : 'hover:text-slate-900'}">
+              <span class="w-5 h-5 mb-0.5">${getIconSVG('users','w-5 h-5')}</span>
+              <span>Khách</span>
+            </button>
+            <button onclick="if(window.state) window.state.activeTab='capital_sources'; if(window.renderApp) window.renderApp();" class="tab-btn flex flex-col items-center justify-center py-2 ${state.activeTab==='capital_sources' ? 'mobile-tab-active' : 'hover:text-slate-900'}">
+              <span class="w-5 h-5 mb-0.5">${getIconSVG('database','w-5 h-5')}</span>
+              <span>Nguồn vốn</span>
+            </button>
+            <button onclick="if(window.state) window.state.activeTab='contracts'; if(window.renderApp) window.renderApp();" class="tab-btn flex flex-col items-center justify-center py-2 ${state.activeTab==='contracts' ? 'mobile-tab-active' : 'hover:text-slate-900'}">
+              <span class="w-5 h-5 mb-0.5">${getIconSVG('fileText','w-5 h-5')}</span>
+              <span>Hợp đồng</span>
+            </button>
+            <button onclick="if(window.state) window.state.activeTab='payments'; if(window.renderApp) window.renderApp();" class="tab-btn flex flex-col items-center justify-center py-2 ${state.activeTab==='payments' ? 'mobile-tab-active' : 'hover:text-slate-900'}">
+              <span class="w-5 h-5 mb-0.5">${getIconSVG('creditCard','w-5 h-5')}</span>
+              <span>Thu tiền</span>
+            </button>
+            <button onclick="if(window.state) window.state.activeTab='settings'; if(window.renderApp) window.renderApp();" class="tab-btn flex flex-col items-center justify-center py-2 ${state.activeTab==='settings' ? 'mobile-tab-active' : 'hover:text-slate-900'}">
+              <span class="w-5 h-5 mb-0.5">${getIconSVG('sync','w-5 h-5')}</span>
+              <span>Cài đặt</span>
+            </button>
+          </div>
+        </nav>
+      `;
+      finalHTML += mobileNavHTML;
+      
+      if (state.notification) finalHTML += `<div class="fixed top-4 right-4 z-50 bg-emerald-600 text-white px-4 py-3 rounded-xl shadow-lg font-semibold animate-fadeIn">✓ ${state.notification.message}</div>`;
+      if (state.customConfirm.show) finalHTML += `<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div class="bg-white p-6 rounded-2xl max-w-sm w-full"><h3 class="font-bold text-lg text-slate-900">${state.customConfirm.title}</h3><p class="mt-2 text-slate-600 text-sm">${state.customConfirm.message}</p><div class="mt-6 flex justify-end gap-2"><button onclick="if(window.state){window.state.customConfirm.show=false;} if(window.renderApp) window.renderApp()" class="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-sm font-semibold">Hủy</button><button onclick="if(window.state && window.state.customConfirm && window.state.customConfirm.action) window.state.customConfirm.action(); if(window.state){window.state.customConfirm.show=false;} if(window.renderApp) window.renderApp()" class="px-4 py-2 bg-rose-600 text-white rounded-xl text-sm font-semibold shadow-md">Xác nhận</button></div></div></div>`;
+      if (state.customAlert.show) finalHTML += `<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div class="bg-white p-6 rounded-2xl max-w-sm w-full"><h3 class="font-bold text-lg text-slate-900">${state.customAlert.title}</h3><div class="mt-2 text-slate-600 text-sm leading-relaxed">${state.customAlert.message}</div><button onclick="if(window.state){window.state.customAlert.show=false;} if(window.renderApp) window.renderApp()" class="mt-6 w-full px-4 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-semibold shadow-md">Đã hiểu</button></div></div>`;
+      
+      finalHTML += renderCustomerModalHTML() + renderCapitalSourceModalHTML() + renderContractModalHTML() + renderPaymentModalHTML() + renderCapitalAdjustmentModalHTML();
+
+      container.innerHTML = finalHTML;
+      } catch(e) {
+        try {
+          container.innerHTML = '<div style="padding:16px;color:#f87171;background:#0f172a;font-family:monospace;white-space:pre-wrap">Lỗi khi vẽ giao diện: ' + (e && e.message || e) + '\n\nThử bấm nút ở màn hình loading hoặc reload file.</div>';
+        } catch(_) {}
+      }
+    }
+
+    function renderCustomerModalHTML() {
+      const data = state.editingCustomer || { MaKH: `KH${state.customers.length + 1}`, TenKhachHang: '', SoDienThoai: '', DiaChi: '', GhiChu: '' };
+      return `<div id="customer-modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center z-50"><div class="bg-white rounded-xl w-full max-w-md p-6 shadow-xl animate-scaleIn"><h3 class="font-bold mb-4 text-slate-900 text-base">Thông tin Khách Hàng</h3><form onsubmit="window.handleSaveCustomer && window.handleSaveCustomer(event)"><div class="space-y-3 mb-5"><input name="MaKH" value="${data.MaKH}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500 font-bold text-slate-800" placeholder="Mã KH (VD: KH1)" required /><input name="TenKhachHang" value="${data.TenKhachHang}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500 font-medium text-slate-900" placeholder="Tên khách" required /><input name="SoDienThoai" value="${data.SoDienThoai}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500" placeholder="SĐT" /><input name="DiaChi" value="${data.DiaChi}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500" placeholder="Địa chỉ thường trú" /><input name="GhiChu" value="${data.GhiChu}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500" placeholder="Ghi chú thêm..." /></div><div class="flex justify-end gap-2"><button type="button" onclick="window.closeModal && window.closeModal('customer-modal')" class="px-4 py-2 bg-slate-100 text-slate-600 font-semibold text-sm rounded-xl">Hủy</button><button type="submit" class="px-4 py-2 bg-slate-900 text-white font-semibold text-sm rounded-xl">Lưu dữ liệu</button></div></form></div></div>`;
+    }
+
+    function renderCapitalSourceModalHTML() {
+      const data = state.editingCapitalSource || { MaNguon: `NGUON_${state.capitalSources.length + 1}`, TenNguon: '', LaiSuatThang: 1.2, GhiChu: '' };
+      return `<div id="capital-source-modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center z-50"><div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl animate-scaleIn"><h3 class="font-bold text-slate-900 mb-4 text-base">Tài Khoản Nguồn Vốn</h3><form onsubmit="window.handleSaveCapitalSource && window.handleSaveCapitalSource(event)"><div class="space-y-3 mb-5"><input name="MaNguon" value="${data.MaNguon}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500 font-bold" placeholder="Mã Nguồn" required /><input name="TenNguon" value="${data.TenNguon}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500 font-semibold text-slate-800" placeholder="Tên Nguồn Vốn" required /><input type="number" step="0.01" name="LaiSuatThang" value="${data.LaiSuatThang}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500 font-bold" placeholder="Lãi suất vay đầu vào (%/tháng)" required /><input name="GhiChu" value="${data.GhiChu}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500" placeholder="Mô tả ghi chú..." /></div><div class="flex justify-end gap-2"><button type="button" onclick="window.closeModal && window.closeModal('capital-source-modal')" class="px-4 py-2 bg-slate-100 text-slate-600 font-semibold text-sm rounded-xl">Hủy</button><button type="submit" class="px-4 py-2 bg-slate-900 text-white font-semibold text-sm rounded-xl">Lưu tài khoản</button></div></form></div></div>`;
+    }
+
+    function renderContractModalHTML() {
+      let custOpts = state.customers.map(c => `<option value="${c.MaKH}">${c.TenKhachHang}</option>`).join('');
+      let srcOpts = state.capitalSources.map(s => `<option value="${s.MaNguon}">${s.TenNguon} (${s.LaiSuatThang}%)</option>`).join('');
+      return `<div id="contract-modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center z-50"><div class="bg-white rounded-2xl w-full max-w-md p-6 h-[80vh] overflow-auto shadow-xl animate-scaleIn"><h3 class="font-bold mb-4 text-slate-900 text-base">Hợp Đồng Cho Vay Mới</h3><form onsubmit="window.handleSaveContract && window.handleSaveContract(event)"><div class="space-y-3 mb-5"><input name="MaHopDong" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500 font-bold text-slate-800" placeholder="Mã Hợp Đồng (VD: HDVT9)" required /><select name="MaKH" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none bg-white font-medium text-slate-800">${custOpts}</select><input type="number" name="SoTienVay" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500 font-bold" placeholder="Số Vốn Cho Vay (VNĐ)" required /><select name="MaNguon" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none bg-white font-bold text-indigo-700">${srcOpts}</select><input type="number" name="LaiNgayTrenTrieu" value="2500" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-emerald-500 font-semibold" placeholder="Lãi ngày/triệu (VD: 2500)" required /><select name="HinhThucLai" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none bg-white"><option>Lãi cố định</option></select><select name="LoaiTaiSan" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none bg-white"><option>Xe máy</option><option>Ô tô</option></select><input name="TenTaiSan" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none" placeholder="Tên dòng xe / tài sản" /><input name="BienSo" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none uppercase" placeholder="Biển số" /><input name="SoKhung" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none" placeholder="Số khung" /><input name="SoMay" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none" placeholder="Số máy" /><input type="date" name="NgayVay" value="${new Date().toISOString().split('T')[0]}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none" required /><input type="date" name="NgayDaoHan" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none" /><select name="TrangThai" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none bg-white font-semibold"><option>Đang vay</option><option>Đã tất toán</option></select><input name="GhiChu" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none" placeholder="Ghi chú điều khoản..." /></div><div class="flex justify-end gap-2"><button type="button" onclick="window.closeModal && window.closeModal('contract-modal')" class="px-4 py-2 bg-slate-100 text-slate-600 font-semibold text-sm rounded-xl">Hủy</button><button type="submit" class="px-4 py-2 bg-slate-900 text-white font-semibold text-sm rounded-xl">Lưu hợp đồng</button></div></form></div></div>`;
+    }
+
+    function renderPaymentModalHTML() {
+      let contOpts = state.contracts.filter(c=>c.TrangThai==='Đang vay').map(c => {
+         const cu = state.customers.find(x=>x.MaKH===c.MaKH);
+         return `<option value="${c.MaHopDong}">${c.MaHopDong} - ${cu?cu.TenKhachHang:''} (${formatVND(c.SoTienVay)})</option>`;
+      }).join('');
+      return `<div id="payment-modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center z-50"><div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl animate-scaleIn"><h3 class="font-bold mb-4 text-slate-900 text-base">Lập Phiếu Thu Tiền Cho Vay</h3><form onsubmit="window.handleSavePayment && window.handleSavePayment(event)"><div class="space-y-3 mb-5"><select id="pm-MaHopDong" name="MaHopDong" onchange="window.onPaymentContractChange && window.onPaymentContractChange(this.value)" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none bg-white font-bold" required><option value="">-- Chọn Hợp Đồng Cho Vay --</option>${contOpts}</select><select name="LoaiThanhToan" onchange="window.onPaymentTypeChange && window.onPaymentTypeChange(this.value)" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none bg-white font-semibold text-indigo-700"><option value="Trả lãi">Trả lãi định kỳ</option><option value="Tất toán">Tất toán gốc</option></select><select name="TrangThaiThu" onchange="window.onTrangThaiThuChange && window.onTrangThaiThuChange(this.value)" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none bg-white font-semibold"><option value="DaNop">Chủ nhận trực tiếp (Nộp két)</option><option value="NhanVienGiu">Nhân viên thu hộ cầm tiền</option></select><div id="pm-staff-container" class="hidden"><input name="NguoiThuHo" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none" placeholder="Nhập tên nhân viên..." value="Nhân viên A" /></div><input type="number" id="pm-SoTienTra" name="SoTienTra" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none font-extrabold text-lg bg-slate-50" placeholder="Số tiền mặt nhận được..." required /><div id="pm-discount-container"><input type="number" name="TienKhuyenMai" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none text-rose-600 font-bold" placeholder="Tiền ưu đãi khuyến mại..." value="0" /></div><input type="date" name="NgayThanhToan" value="${new Date().toISOString().split('T')[0]}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none" required /><input name="GhiChu" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none" placeholder="Diễn giải nội dung thu tiền..." /></div><div class="flex justify-end gap-2"><button type="button" onclick="window.closeModal && window.closeModal('payment-modal')" class="px-4 py-2 bg-slate-100 text-slate-600 font-semibold text-sm rounded-xl">Hủy</button><button type="submit" class="px-4 py-2 bg-slate-900 text-white font-semibold text-sm rounded-xl">Xác nhận lập phiếu</button></div></form></div></div>`;
+    }
+
+    function renderCapitalAdjustmentModalHTML() {
+      const src = state.capitalSources.find(s => s.MaNguon === state.viewingCapitalSourceId);
+      if (!src) return '';
+      let hist = (src.LichSuBienDong||[]).map((tx, idx) => `<div class="flex justify-between border-b p-2"><div><span class="${tx.SoTien>=0?'text-emerald-600 bg-emerald-50':'text-rose-600 bg-rose-50'} text-xs font-bold px-2 py-0.5 rounded">${tx.SoTien>=0?'Vay thêm':'Trả bớt'}</span> <span class="text-[10px] text-gray-500 ml-1">${tx.Ngay}</span><br><span class="text-xs text-slate-600 block mt-1">${tx.NoiDung}</span></div><div class="text-right"><span class="font-extrabold text-xs block">${formatVND(tx.SoTien)}</span><button onclick="window.handleDeleteCapitalAdjustment && window.handleDeleteCapitalAdjustment(${idx})" class="text-[11px] text-rose-500 font-bold underline">Xóa</button></div></div>`).join('');
+      return `<div id="capital-adjustment-modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center z-50"><div class="bg-white rounded-2xl w-full max-w-2xl p-6 shadow-xl animate-scaleIn"><div class="flex justify-between items-center mb-4"><h3 class="font-bold text-slate-900 text-base">📊 Biến động dòng tiền: ${src.TenNguon}</h3><button onclick="window.closeModal && window.closeModal('capital-adjustment-modal')" class="p-1 text-slate-400 hover:text-slate-800">${getIconSVG('x', 'w-5 h-5')}</button></div><div class="grid grid-cols-1 md:grid-cols-2 gap-6"><div><form onsubmit="window.handleAddCapitalAdjustment && window.handleAddCapitalAdjustment(event)"><div class="space-y-3 mb-4"><select name="KieuBienDong" class="w-full border p-2.5 text-xs rounded-xl focus:outline-none bg-white font-semibold"><option value="Tang">Tăng vốn (Vay thêm)</option><option value="Giam">Rút giảm vốn (Trả gốc)</option></select><input type="number" name="SoTien" class="w-full border p-2.5 text-xs rounded-xl focus:outline-none font-bold" placeholder="Số tiền" required /><input type="date" name="Ngay" value="${new Date().toISOString().split('T')[0]}" class="w-full border p-2.5 text-xs rounded-xl focus:outline-none" required /><input name="NoiDung" class="w-full border p-2.5 text-xs rounded-xl focus:outline-none" placeholder="Nội dung diễn giải..." /></div><button type="submit" class="w-full px-4 py-2.5 bg-slate-900 text-white text-xs font-bold rounded-xl shadow-md">Ghi nhận giao dịch</button></form></div><div class="h-64 overflow-auto border p-2.5 rounded-2xl"><h4 class="font-bold text-xs text-slate-400 mb-2 uppercase tracking-wide">Nhật ký biến động</h4>${html_escape(hist)}</div></div></div></div>`;
+      
+      function html_escape(str) {
+        return str; // No-op as this is internal HTML
+      }
+    }
+
+    function renderSetupScreen() {
+      document.getElementById('app-container').innerHTML = `
+        <div class="min-h-screen w-full flex items-center justify-center bg-slate-900 p-4 text-slate-200">
+          <div class="bg-slate-800 rounded-3xl p-8 max-w-lg w-full shadow-2xl relative"><div class="absolute -top-10 -right-10 w-40 h-40 bg-emerald-500/10 rounded-full blur-3xl"></div><div class="flex items-center gap-3 mb-6"><div class="bg-emerald-500 p-3 rounded-2xl text-slate-900">${getIconSVG('database', 'w-6 h-6')}</div><div><h2 class="text-xl font-bold text-white tracking-tight">KÍCH HOẠT CLOUD SYNC</h2><p class="text-[11px] text-slate-400 mt-0.5">Tự động đồng bộ thời gian thực Máy tính & Điện thoại</p></div></div><p class="text-sm text-slate-300 leading-relaxed mb-4">Bạn dán nguyên cả đoạn mã Firebase Console cấp vào ô bên dưới, hệ thống sẽ tự động bóc tách và nạp mây riêng tư miễn phí 100%.</p>
+          <form onsubmit="window.handleSaveUserFirebaseConfig && window.handleSaveUserFirebaseConfig(event)"><textarea name="firebaseJson" class="w-full bg-slate-900 border border-slate-700 rounded-2xl p-3 text-xs font-mono text-emerald-400 h-32 focus:outline-none focus:border-emerald-500" placeholder='const firebaseConfig = {\n  apiKey: "AIzaSy...",\n  authDomain: "...",\n  projectId: "..."\n};' required></textarea><button type="submit" class="w-full bg-emerald-500 text-slate-950 font-bold py-3 mt-4 rounded-2xl shadow-lg shadow-emerald-500/10 transition-all">✓ Kết Nối Cloud Database</button></form>
+          <p class="text-[10px] text-slate-500 mt-3 text-center">Sau khi kết nối, bạn sẽ được yêu cầu <b>Đăng ký / Đăng nhập</b> bằng Email + Mật khẩu (dùng chung trên iPhone &amp; máy tính để sync).</p>
+          <button onclick="window.renderApp && window.renderApp()" class="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-2.5 mt-2 rounded-2xl transition-all text-xs">Quay lại Ngoại tuyến</button></div></div>
+      `;
+    }
+
+    // LOGIN / REGISTER SCREEN for real cross-device sync (email/pass works reliably on iOS)
+    window._isRegisterMode = false;
+    function renderLoginScreen() {
+      const container = document.getElementById('app-container');
+      if (!container) return;
+      try {
+      const isReg = !!window._isRegisterMode;
+      const modeTitle = isReg ? 'Tạo tài khoản mới' : 'Đăng nhập';
+      const modeDesc = isReg ? 'Đăng ký để dùng chung dữ liệu trên iPhone + Máy tính' : 'Đăng nhập bằng tài khoản để đồng bộ an toàn giữa các thiết bị';
+      container.innerHTML = `
+        <div class="min-h-screen w-full flex items-center justify-center bg-slate-900 p-4 text-slate-200">
+          <div class="bg-slate-800 rounded-3xl p-8 max-w-md w-full shadow-2xl">
+            <div class="flex items-center gap-3 mb-6">
+              <div class="bg-emerald-500 p-3 rounded-2xl text-slate-900">${getIconSVG('dollar', 'w-6 h-6')}</div>
+              <div>
+                <h2 class="text-2xl font-bold text-white tracking-tight">Quản Lý Vốn CV</h2>
+                <p class="text-[11px] text-emerald-400">Cloud Sync • Đa thiết bị</p>
+              </div>
+            </div>
+            <div class="mb-6">
+              <h3 class="font-bold text-xl text-white">${modeTitle}</h3>
+              <p class="text-sm text-slate-400 mt-1">${modeDesc}</p>
+            </div>
+
+            <form id="auth-form" onsubmit="event.preventDefault(); window._isRegisterMode ? window.handleRegister(event) : window.handleLogin(event);">
+              <div class="space-y-3">
+                <input type="email" name="email" placeholder="Email của bạn" required class="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500" />
+                <input type="password" name="password" placeholder="Mật khẩu (ít nhất 6 ký tự)" required minlength="6" class="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500" />
+                ${isReg ? `<input type="password" name="confirm" placeholder="Nhập lại mật khẩu" required minlength="6" class="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500" />` : ''}
+              </div>
+              <button type="submit" class="mt-4 w-full bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 transition text-slate-950 font-extrabold py-3.5 rounded-2xl shadow-lg">${isReg ? 'ĐĂNG KÝ & ĐĂNG NHẬP' : 'ĐĂNG NHẬP'}</button>
+            </form>
+
+            <div class="flex items-center justify-between mt-4 text-sm">
+              <button onclick="window._isRegisterMode=false; window.renderLoginScreen();" class="text-emerald-400 hover:underline ${isReg ? '' : 'hidden'}">Đã có tài khoản? Đăng nhập</button>
+              <button onclick="window._isRegisterMode=true; window.renderLoginScreen();" class="text-emerald-400 hover:underline ${isReg ? 'hidden' : ''}">Chưa có tài khoản? Đăng ký</button>
+              <button onclick="window.renderApp && window.renderApp()" class="text-slate-400 hover:text-white text-xs">Dùng Offline</button>
+            </div>
+
+            <div class="mt-6 pt-4 border-t border-slate-700 text-[10px] text-slate-500 leading-snug">
+              Dùng cùng email + mật khẩu trên iPhone &amp; máy tính để dữ liệu đồng bộ. <br>
+              <button onclick="window.renderSetupScreen && window.renderSetupScreen()" class="underline text-indigo-400 mt-1">Thay đổi cấu hình Firebase (nâng cao)</button>
+            </div>
+          </div>
+        </div>
+      `;
+      } catch(e) {
+        try { container.innerHTML = '<div style="padding:20px;color:#f87171;background:#0f172a">Lỗi khi vẽ màn hình đăng nhập: ' + e.message + '</div>'; } catch(_) {}
+      }
+    }
+
+    async function handleLogin(e) {
+      const form = e.target || document.getElementById('auth-form');
+      const email = form.email.value.trim();
+      const pass = form.password.value;
+      if (!window._firebaseAuth) { alert("Chưa kết nối Firebase. Hãy kích hoạt Cloud Sync trước."); return renderSetupScreen(); }
+      try {
+        const { signInWithEmailAndPassword } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
+        await signInWithEmailAndPassword(window._firebaseAuth, email, pass);
+        // onAuthStateChanged listener will switch from login screen to main app automatically
+      } catch (err) {
+        console.error(err);
+        alert("Đăng nhập thất bại: " + (err.message || err.code || "Sai email/mật khẩu hoặc chưa bật Email/Password provider trong Firebase Console."));
+      }
+    }
+
+    async function handleRegister(e) {
+      const form = e.target || document.getElementById('auth-form');
+      const email = form.email.value.trim();
+      const pass = form.password.value;
+      const confirm = form.confirm ? form.confirm.value : '';
+      if (pass !== confirm) { alert("Mật khẩu nhập lại không khớp!"); return; }
+      if (!window._firebaseAuth) { alert("Chưa kết nối Firebase. Hãy kích hoạt Cloud Sync trước."); return renderSetupScreen(); }
+      try {
+        const { createUserWithEmailAndPassword } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
+        await createUserWithEmailAndPassword(window._firebaseAuth, email, pass);
+        // onAuthStateChanged will switch UI to main app
+      } catch (err) {
+        console.error(err);
+        let msg = err.message || err.code;
+        if (err.code === 'auth/email-already-in-use') msg = 'Email này đã được dùng. Hãy đăng nhập hoặc dùng email khác.';
+        alert("Đăng ký thất bại: " + msg + "\n\nHãy vào Firebase Console > Authentication > Sign-in method bật 'Email/Password'.");
+      }
+    }
+
+    async function handleLogout() {
+      if (!window._firebaseAuth) return window.location.reload();
+      try {
+        const { signOut } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
+        await signOut(window._firebaseAuth);
+        // will trigger onAuthStateChanged -> show login
+      } catch(e){ window.location.reload(); }
+    }
+
+    function handleSaveUserFirebaseConfig(e) {
+      e.preventDefault();
+      try {
+        let rawInput = e.target.firebaseJson.value.trim();
+        let config = null;
+        
+        try {
+          config = JSON.parse(rawInput);
+        } catch (jsonErr) {
+          try {
+            let jsObjectString = rawInput
+              .replace(/^(const|let|var|window\.)?\s*(\w+)\s*=\s*/i, '')
+              .replace(/;+$/, '')
+              .trim();
+            
+            config = new Function('return (' + jsObjectString + ')')();
+          } catch (evalErr) {
+            const extractedConfig = {};
+            const keys = ["apiKey", "authDomain", "projectId", "storageBucket", "messagingSenderId", "appId", "measurementId"];
+            
+            keys.forEach(key => {
+              const regex = new RegExp(`${key}\\s*:\\s*['"\`]([^'"\`]+)['"\`]`, 'i');
+              const match = rawInput.match(regex);
+              if (match && match[1]) {
+                extractedConfig[key] = match[1].trim();
+              }
+            });
+            
+            if (extractedConfig.apiKey && extractedConfig.projectId) {
+              config = extractedConfig;
+            } else {
+              throw new Error("Không thể bóc tách tham số");
+            }
+          }
+        }
+        
+        if (!config || !config.apiKey || !config.projectId) {
+          throw new Error("Cấu hình thiếu trường bắt buộc");
+        }
+        
+        localStorage.setItem('user_firebase_config', JSON.stringify(config));
+        // reload to let module init firebase + show login/register screen
+        setTimeout(() => {
+          window.location.reload();
+        }, 800);
+      } catch (err) { 
+        alert("Cấu hình không hợp lệ. Vui lòng dán chính xác toàn bộ Code Config của Firebase."); 
+      }
+    }
+
+    function handleDisconnectCloud() {
+      showConfirm("Ngắt kết nối mây?", "Dữ liệu mới nhập trên máy tính này sẽ không tự động đồng bộ sang điện thoại nữa?", () => {
+        localStorage.removeItem('user_firebase_config');
+        window.location.reload();
+      });
+    }
+
+    // ĐĂNG KÝ PHƯƠNG THỨC LÊN PHẠM VI TOÀN CỤC CHỐNG LỖI NOT DEFINED
+    window.state = state;
+    window.renderApp = renderApp;
+    window.openCustomerModal = openCustomerModal;
+    window.openContractModal = openContractModal;
+    window.openCapitalSourceModal = openCapitalSourceModal;
+    window.openCapitalAdjustmentModal = openCapitalAdjustmentModal;
+    window.openPaymentModal = openPaymentModal;
+    window.closeModal = closeModal;
+    window.handleSaveCustomer = handleSaveCustomer;
+    window.handleSaveCapitalSource = handleSaveCapitalSource;
+    window.handleSaveContract = handleSaveContract;
+    window.handleSavePayment = handleSavePayment;
+    window.handleDeleteCustomer = handleDeleteCustomer;
+    window.handleDeleteCapitalSource = handleDeleteCapitalSource;
+    window.handleDeleteContract = handleDeleteContract;
+    window.handleDeletePayment = handleDeletePayment;
+    window.handleConfirmStaffPaymentNopQuy = handleConfirmStaffPaymentNopQuy;
+    window.handleDeleteCapitalAdjustment = handleDeleteCapitalAdjustment;
+    window.handleAddCapitalAdjustment = handleAddCapitalAdjustment;
+    window.handleResetSystem = handleResetSystem;
+    window.handleExportJSON = handleExportJSON;
+    window.handleImportJSON = handleImportJSON;
+    window.onPaymentContractChange = onPaymentContractChange;
+    window.onPaymentTypeChange = onPaymentTypeChange;
+    window.onTrangThaiThuChange = onTrangThaiThuChange;
+    window.handleDisconnectCloud = handleDisconnectCloud;
+    window.handleSaveUserFirebaseConfig = handleSaveUserFirebaseConfig;
+    window.renderSetupScreen = renderSetupScreen;
+    window.renderLoginScreen = renderLoginScreen;
+    window.handleLogin = handleLogin;
+    window.handleRegister = handleRegister;
+    window.handleLogout = handleLogout;
+    window.getIconSVG = getIconSVG;
+    window.showNotification = showNotification;
+    window.showAlert = showAlert;
+    window.showConfirm = showConfirm;
+    window.showModal = showModal;
+
+    // KHỞI ĐỘNG CHẠY NGAY
+    try {
+      // If user has cloud config, show login/register immediately (no flash of main UI on iPhone)
+      if (localStorage.getItem('user_firebase_config') && typeof renderLoginScreen === 'function') {
+        renderLoginScreen();
+      } else {
+        renderApp();
+      }
+    } catch (e) {
+      document.getElementById('app-container').innerHTML = `<div style="padding:20px;color:red;font-weight:bold;">Lỗi nạp cục bộ: ${e.message}</div>`;
+    }
+
+    // Safety net for stuck loader (in case top-level init partially failed or race on iOS)
+    setTimeout(function(){
+      try {
+        var c = document.getElementById('app-container');
+        if (c && c.innerHTML && c.innerHTML.indexOf('Đang khởi tạo không gian làm việc') !== -1) {
+          if (localStorage.getItem('user_firebase_config') && typeof renderLoginScreen === 'function') {
+            renderLoginScreen();
+          } else if (typeof renderApp === 'function') {
+            renderApp();
+          } else {
+            c.innerHTML = '<div style="padding:20px;color:#f87171;background:#0f172a;font-family:monospace">Script loaded incompletely. Please reload the .html file (or re-download it).</div>';
+          }
+        }
+      } catch(err) {}
+    }, 900);
+  </script>
+
+  <!-- FIREBASE MODULE LOAD (TÍNH NĂNG TẢI TRỰC TUYẾN CHẠY NGẦM BẢO VỆ CHỐNG TREO) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, onAuthStateChanged, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, deleteDoc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    
+    // Will be set after login
+    let unsubscribeFns = [];
+
+    function setupCloudAPI(userId) {
+      if (!userId || !window.db || !window.appId) return;
+      window.userId = userId;
+      window.cloudAPI = {
+        setDoc: (col, id, data) => setDoc(doc(window.db, 'artifacts', window.appId, 'users', userId, col, id), data),
+        deleteDoc: (col, id) => deleteDoc(doc(window.db, 'artifacts', window.appId, 'users', userId, col, id))
+      };
+    }
+
+    function attachRealtimeListeners(userId) {
+      // cleanup old
+      unsubscribeFns.forEach(u => { try { u(); } catch(_){} });
+      unsubscribeFns = [];
+      if (!userId || !window.db || !window.appId) return;
+
+      const userDoc = doc(window.db, 'artifacts', window.appId, 'users', userId);
+
+      unsubscribeFns.push( onSnapshot(collection(userDoc, 'customers'), s => {
+        if (!s.empty || (window.state.customers || []).length === 0) {
+          window.state.customers = s.docs.map(d => d.data());
+        }
+        if (window.renderApp) window.renderApp();
+      }));
+      unsubscribeFns.push( onSnapshot(collection(userDoc, 'contracts'), s => {
+        if (!s.empty || (window.state.contracts || []).length === 0) {
+          window.state.contracts = s.docs.map(d => d.data());
+        }
+        if (window.renderApp) window.renderApp();
+      }));
+      unsubscribeFns.push( onSnapshot(collection(userDoc, 'payments'), s => {
+        if (!s.empty || (window.state.payments || []).length === 0) {
+          window.state.payments = s.docs.map(d => d.data());
+        }
+        if (window.renderApp) window.renderApp();
+      }));
+      unsubscribeFns.push( onSnapshot(collection(userDoc, 'capital_sources'), s => {
+        if (!s.empty || (window.state.capitalSources || []).length === 0) {
+          window.state.capitalSources = s.docs.map(d => d.data());
+        }
+        if (window.renderApp) window.renderApp();
+      }));
+    }
+
+    setTimeout(async () => {
+      let config = localStorage.getItem('user_firebase_config') ? JSON.parse(localStorage.getItem('user_firebase_config')) : null;
+      if (typeof __firebase_config !== 'undefined' && __firebase_config) { config = JSON.parse(__firebase_config); window.state.isSandbox = true; }
+      
+      if (config && config.apiKey) {
+        try {
+          const app = initializeApp(config);
+          window.db = getFirestore(app);
+          window.appId = typeof __app_id !== 'undefined' ? __app_id : 'loan-vip-cv';
+          const auth = getAuth(app);
+          window._firebaseAuth = auth;
+
+          // IMPORTANT for iOS Safari persistence (localStorage/IndexedDB under ITP)
+          try {
+            await setPersistence(auth, browserLocalPersistence);
+          } catch (pErr) { console.warn('Persistence set failed (non-fatal on some iOS):', pErr); }
+
+          // Listen for real login state (email/pass). This is what makes "đăng nhập trên iPhone" reliable + cross device.
+          onAuthStateChanged(auth, (user) => {
+            if (user) {
+              window.state.cloudConnected = true;
+              setupCloudAPI(user.uid);
+              attachRealtimeListeners(user.uid);
+              // If we were showing login, switch to main app
+              const c = document.getElementById('app-container');
+              if (c && c.innerHTML.includes('Đăng nhập') || c && c.innerHTML.includes('Tạo tài khoản')) {
+                try { window.renderApp(); } catch(_) {}
+              } else {
+                // normal case
+                if (window.renderApp) window.renderApp();
+              }
+            } else {
+              // logged out or never logged
+              window.state.cloudConnected = false;
+              window.userId = null;
+              window.cloudAPI = null;
+              // cleanup listeners
+              unsubscribeFns.forEach(u => { try { u(); } catch(_){} });
+              unsubscribeFns = [];
+              // show login screen (only if we have config)
+              if (typeof window.renderLoginScreen === 'function') {
+                window.renderLoginScreen();
+              } else {
+                // fallback
+                if (window.renderApp) window.renderApp();
+              }
+            }
+          });
+
+        } catch(e) { 
+          console.error("Cloud Connection Failed:", e);
+          if (e.code === 'permission-denied') {
+             window.showAlert && window.showAlert("Lỗi Phân Quyền Firestore", "Quy tắc Firestore của bạn đang chặn quyền ghi. Hãy đổi Firestore Rules thành:\n\nmatch /artifacts/{appId}/users/{userId}/{document=**} {\n  allow read, write: if request.auth != null && request.auth.uid == userId;\n}");
+          }
+        }
+      } else {
+        // no config yet: user can still use offline, or click to setup
+        // renderApp already ran, sidebar will offer the button
+      }
+    }, 120);
+  </script>
+</body>
+</html>

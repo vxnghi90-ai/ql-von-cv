@@ -1,0 +1,22 @@
+﻿DỮ LIỆU TỪ EXCEL CỦA BẠN ĐÃ ĐƯỢC NHÚNG VÀO APP
+
+File: Quản-Lý-Vốn-CV-Full.html
+
+Dữ liệu đã được thay thế bằng đúng dữ liệu từ file Excel DuLieu_QuanLyChoVay.xlsx của bạn:
+- 23 khách hàng
+- 20 hợp đồng
+- 4 nguồn vốn
+- 0 thanh toán (vì Excel không có, và bạn nói đây là lập mới)
+
+Cách xem dữ liệu của bạn:
+1. Đóng tab trình duyệt này hoàn toàn.
+2. Mở lại file Quản-Lý-Vốn-CV-Full.html
+3. Nhấn Ctrl + Shift + R (hard reload)
+4. Vào các tab: Tổng quan Dashboard, Khách hàng, Nguồn Vốn, Hợp đồng để xem dữ liệu từ Excel của bạn.
+
+Tab "Cài đặt & Sync" này chỉ là phần cài đặt, không hiển thị danh sách dữ liệu chính.
+Nút "Khôi phục mẫu gốc" sẽ đưa về dữ liệu từ Excel của bạn (vì đã được nhúng làm mẫu).
+
+Cloud Sync đã bị loại bỏ khỏi giao diện theo yêu cầu trước của bạn.
+
+Nếu vẫn thấy dữ liệu cũ sau reload, hãy thử mở file trong trình duyệt khác hoặc xóa cache trình duyệt.
