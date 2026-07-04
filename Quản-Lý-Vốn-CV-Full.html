@@ -1713,14 +1713,106 @@ const DEFAULT_CAPITAL_SOURCES = [
       return Number((contract && contract.SoLaiCoDinh) || 0);
     }
 
+    // Tính "Ngày vay sau đáo" = Ngày vay (hoặc ngày tính lãi gốc) + số tháng tương ứng với số lần đóng lãi
+    function calculateNgayVaySauDao(contract) {
+      if (!contract) return '';
+      const baseStr = contract.NgayBatDauTinhLai || contract.NgayVay;
+      if (!baseStr) return '';
+
+      const contractPayments = (state.payments || []).filter(p => p.MaHopDong === contract.MaHopDong && p.LoaiThanhToan === 'Trả lãi');
+      const paidMonths = contractPayments.length;
+
+      if (paidMonths === 0) return baseStr;
+
+      const parts = baseStr.split('-');
+      if (parts.length !== 3) return baseStr;
+
+      let y = parseInt(parts[0], 10);
+      let m = parseInt(parts[1], 10) - 1; // 0-indexed
+      let d = parseInt(parts[2], 10);
+
+      m += paidMonths;
+      y += Math.floor(m / 12);
+      m = m % 12;
+
+      const maxDays = new Date(y, m + 1, 0).getDate();
+      if (d > maxDays) d = maxDays;
+
+      const mm = String(m + 1).padStart(2, '0');
+      const dd = String(d).padStart(2, '0');
+      return `${y}-${mm}-${dd}`;
+    }
+
+    // Tính Lãi còn nợ từ "Ngày vay sau đáo" đến Ngày hiện tại (targetDateStr)
+    // Quy tắc:
+    // - Nếu chưa đủ 1 tháng: Lãi = Số tiền lãi/ngày * Số ngày lẻ trôi qua
+    // - Nếu đã đủ hoặc vượt 1 tháng: Lãi = (Số tháng tròn * Lãi 1 tháng 30d) + (Số tiền lãi/ngày * Số ngày lẻ dư)
+    function calculateInterestFromNgayVaySauDao(contract, targetDateStr) {
+      if (!contract) return { laiConNo: 0, fullMonths: 0, remDays: 0, ngayVaySauDaoStr: '' };
+      const ngayVaySauDaoStr = calculateNgayVaySauDao(contract);
+      if (!ngayVaySauDaoStr || !targetDateStr) return { laiConNo: 0, fullMonths: 0, remDays: 0, ngayVaySauDaoStr: '' };
+
+      if (contract.LoaiHopDong === 'LaiCoDinhNgay') {
+        const cPayments = (state.payments || []).filter(p => p.MaHopDong === contract.MaHopDong && p.LoaiThanhToan === 'Trả lãi');
+        const laiDaTra = cPayments.reduce((sum, p) => sum + Number(p.SoTienTra || 0), 0);
+        const fixed = Number(contract.SoLaiCoDinh || 0);
+        return { laiConNo: Math.max(0, fixed - laiDaTra), fullMonths: 0, remDays: 0, ngayVaySauDaoStr };
+      }
+
+      const soTien = Number(contract.SoTienVay || 0);
+      const laiNgay = Number(contract.LaiNgayTrenTrieu || 0);
+      const baseMonth30 = Math.round((soTien / 1000000) * laiNgay * 30);
+      const dailyInterest = Math.round((soTien / 1000000) * laiNgay);
+
+      const cPayments = (state.payments || []).filter(p => p.MaHopDong === contract.MaHopDong && p.LoaiThanhToan === 'Trả lãi');
+      const isFirstCycle = cPayments.length === 0;
+      const extraDays = isFirstCycle ? calculateStandardDays(contract.NgayVay, contract.NgayBatDauTinhLai || contract.NgayVay) : 0;
+      const extraLai = extraDays > 0 ? extraDays * dailyInterest : 0;
+
+      const startDate = new Date(ngayVaySauDaoStr);
+      const endDate = new Date(targetDateStr);
+      if (endDate < startDate) return { laiConNo: 0, fullMonths: 0, remDays: 0, ngayVaySauDaoStr, extraDays, extraLai };
+
+      let y1 = startDate.getFullYear(), m1 = startDate.getMonth(), d1 = startDate.getDate();
+      let y2 = endDate.getFullYear(), m2 = endDate.getMonth(), d2 = endDate.getDate();
+
+      let fullMonths = (y2 - y1) * 12 + (m2 - m1);
+      
+      let anchorDate = new Date(y1, m1 + fullMonths, d1);
+      const maxAnchorDays = new Date(y1, m1 + fullMonths + 1, 0).getDate();
+      if (d1 > maxAnchorDays) anchorDate = new Date(y1, m1 + fullMonths, maxAnchorDays);
+
+      if (endDate < anchorDate) {
+        fullMonths -= 1;
+        anchorDate = new Date(y1, m1 + fullMonths, d1);
+        const maxPrevDays = new Date(y1, m1 + fullMonths + 1, 0).getDate();
+        if (d1 > maxPrevDays) anchorDate = new Date(y1, m1 + fullMonths, maxPrevDays);
+      }
+
+      const remDays = calculateStandardDays(anchorDate.toISOString().split('T')[0], targetDateStr);
+      let laiConNo = 0;
+      if (fullMonths <= 0) {
+        laiConNo = (remDays * dailyInterest) + extraLai;
+      } else {
+        laiConNo = (fullMonths * baseMonth30) + (remDays * dailyInterest) + extraLai;
+      }
+
+      return {
+        laiConNo,
+        fullMonths,
+        remDays,
+        ngayVaySauDaoStr,
+        extraDays,
+        extraLai
+      };
+    }
+
     function calculateContractInterest(contract) {
       const today = new Date();
       let endCalculateDate = contract.TrangThai === 'Đã tất toán' && contract.NgayTatToan ? new Date(contract.NgayTatToan) : today;
       const endCalStr = endCalculateDate.toISOString().split('T')[0];
       
       let soNgayVay = calculateStandardDays(contract.NgayVay, endCalStr);
-      let tongLaiPhatSinh = 0;
-      let laiThangChuan30Ngay = 0;
 
       const contractPayments = (state.payments || []).filter(p => p.MaHopDong === contract.MaHopDong);
       const laiPayments = contractPayments.filter(p => p.LoaiThanhToan === 'Trả lãi')
@@ -1728,44 +1820,24 @@ const DEFAULT_CAPITAL_SOURCES = [
       const isFirstCycle = laiPayments.length === 0;
 
       const ngayTinhLaiStr = contract.NgayBatDauTinhLai || contract.NgayVay;
-      const extraDays = calculateStandardDays(contract.NgayVay, ngayTinhLaiStr);
+      const extraDays = isFirstCycle ? calculateStandardDays(contract.NgayVay, ngayTinhLaiStr) : 0;
       const extraLai = extraDays > 0 ? Math.round((contract.SoTienVay / 1000000) * (contract.LaiNgayTrenTrieu || 0) * extraDays) : 0;
       const baseMonth30 = Math.round((contract.SoTienVay / 1000000) * (contract.LaiNgayTrenTrieu || 0) * 30);
 
+      let laiThangChuan30Ngay = (isFirstCycle && extraDays > 0) ? (baseMonth30 + extraLai) : baseMonth30;
       if (contract.LoaiHopDong === 'LaiCoDinhNgay') {
-        tongLaiPhatSinh = Number(contract.SoLaiCoDinh || 0);
         laiThangChuan30Ngay = Number(contract.SoLaiCoDinh || 0);
-      } else {
-        // Lãi tháng chuẩn / Lãi kỳ này:
-        // Nếu ở kỳ đầu và có ngày xin lùi (extraDays > 0): Lãi tháng đầu = Lãi 30d + Lãi chênh lùi
-        if (isFirstCycle && extraDays > 0) {
-          laiThangChuan30Ngay = baseMonth30 + extraLai;
-        } else {
-          laiThangChuan30Ngay = baseMonth30;
-        }
-
-        // Tính tổng lãi phát sinh:
-        if (isFirstCycle) {
-          // Tháng đầu chưa đóng: Tổng lãi phải đóng của kỳ 1 = 30 ngày chuẩn + số ngày chênh lùi
-          tongLaiPhatSinh = baseMonth30 + extraLai;
-        } else {
-          const daysFromTinhLai = calculateStandardDays(ngayTinhLaiStr, endCalStr);
-          const regularLai = Math.round((contract.SoTienVay / 1000000) * (contract.LaiNgayTrenTrieu || 0) * daysFromTinhLai);
-          tongLaiPhatSinh = regularLai + extraLai;
-        }
       }
 
+      const sauDaoResult = calculateInterestFromNgayVaySauDao(contract, endCalStr);
+      const laiConNo = sauDaoResult.laiConNo;
+      const tongLaiPhatSinh = sauDaoResult.laiConNo;
+      const ngayVaySauDaoStr = sauDaoResult.ngayVaySauDaoStr || ngayTinhLaiStr;
+
       const ngayDongLaiGanNhat = laiPayments.length > 0 ? laiPayments[0].NgayThanhToan : null;
-      const laiDaTra = contractPayments.filter(p => p.LoaiThanhToan === 'Trả lãi').reduce((sum, p) => {
-        const tra = Number(p.SoTienTra || 0);
-        const km = Number(p.TienKhuyenMai || 0);
-        if (km > 0 && tra >= km) return sum + tra;
-        return sum + tra + km;
-      }, 0);
+      const laiDaTra = contractPayments.filter(p => p.LoaiThanhToan === 'Trả lãi').reduce((sum, p) => sum + Number(p.SoTienTra || 0), 0);
       const gocDaTra = contractPayments.filter(p => p.LoaiThanhToan === 'Tất toán').reduce((sum, p) => sum + Number(p.SoTienTra), 0);
       const duNoGocHienTai = Math.max(0, contract.SoTienVay - gocDaTra);
-
-      const laiConNo = Math.max(0, tongLaiPhatSinh - laiDaTra);
 
       let chiPhiVonLuyKe = 0;
       const lichSuNguon = contract.LichSuNguon || [{ NgayBatDau: contract.NgayVay, NgayKetThuc: null, MaNguon: contract.MaNguon, SoTien: contract.SoTienVay }];
@@ -1796,8 +1868,11 @@ const DEFAULT_CAPITAL_SOURCES = [
         lichSuNguon,
         laiThangChuan30Ngay,
         ngayDongLaiGanNhat,
+        ngayVaySauDaoStr,
         extraDays,
-        extraLai
+        extraLai,
+        fullMonths: sauDaoResult.fullMonths,
+        remDays: sauDaoResult.remDays
       };
     }
 
@@ -4017,6 +4092,7 @@ const DEFAULT_CAPITAL_SOURCES = [
               <td class="p-2 font-semibold text-slate-900 text-xs">${custName}</td>
               <td class="p-2 text-slate-600 text-xs">${formatDate(contract.NgayVay)}</td>
               <td class="p-2 text-slate-600 text-xs">${formatDate(calc.ngayDongLaiGanNhat)}</td>
+              <td class="p-2 text-indigo-700 text-xs font-extrabold bg-indigo-50/40">${formatDate(calc.ngayVaySauDaoStr)}</td>
               <td class="p-2 text-xs font-bold">${formatDate(contract.NgayDaoHan)}${warningTag}</td>
               <td class="p-2 text-right font-extrabold text-slate-900 text-xs">${formatVND(calc.duNoGocHienTai)}</td>
               <td class="p-2">${timeline}</td>
@@ -4025,7 +4101,7 @@ const DEFAULT_CAPITAL_SOURCES = [
               <td class="p-2 text-center"><button onclick="window.openPaymentModal && window.openPaymentModal('${contract.MaHopDong}')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold">Thu</button><button onclick="window.openContractModal && window.openContractModal('${contract.MaHopDong}')" class="text-indigo-600 hover:text-indigo-800 font-semibold ml-1 text-xs">Sửa</button><button onclick="window.handleDeleteContract && window.handleDeleteContract('${contract.MaHopDong}')" class="text-rose-600 hover:text-rose-800 font-semibold ml-1 text-xs">Xóa</button></td>
             </tr>`;
         });
-        mainContentHTML = `<div class="bg-white rounded-2xl border border-slate-100 overflow-x-auto shadow-sm"><table class="w-full text-sm text-left"><thead><tr class="bg-slate-50 border-b text-slate-400 font-bold"><th class="p-2 uppercase text-xs">STT</th><th class="p-2 uppercase">Mã HĐ</th><th class="p-2 uppercase text-xs">Khách Hàng <span class="inline-block align-middle">${khFilterHTML}</span></th><th class="p-2 uppercase text-xs">Ngày vay</th><th class="p-2 uppercase text-xs">TT gần nhất</th><th class="p-2 uppercase text-xs">Đến hạn</th><th class="p-2 text-right uppercase">Số vay</th><th class="p-2 uppercase">Timeline nguồn vốn (tự chia)</th><th class="p-2 text-right uppercase text-xs">Lãi 1 tháng (30d)</th><th class="p-2 text-right uppercase">Lãi còn nợ</th><th class="p-2 text-center uppercase">Thao tác</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+        mainContentHTML = `<div class="bg-white rounded-2xl border border-slate-100 overflow-x-auto shadow-sm"><table class="w-full text-sm text-left"><thead><tr class="bg-slate-50 border-b text-slate-400 font-bold"><th class="p-2 uppercase text-xs">STT</th><th class="p-2 uppercase">Mã HĐ</th><th class="p-2 uppercase text-xs">Khách Hàng <span class="inline-block align-middle">${khFilterHTML}</span></th><th class="p-2 uppercase text-xs">Ngày vay</th><th class="p-2 uppercase text-xs">TT gần nhất</th><th class="p-2 uppercase text-xs text-indigo-700 bg-indigo-50/70 font-extrabold rounded-t">Ngày vay sau đáo</th><th class="p-2 uppercase text-xs">Đến hạn</th><th class="p-2 text-right uppercase">Số vay</th><th class="p-2 uppercase">Timeline nguồn vốn (tự chia)</th><th class="p-2 text-right uppercase text-xs">Lãi 1 tháng (30d)</th><th class="p-2 text-right uppercase">Lãi còn nợ</th><th class="p-2 text-center uppercase">Thao tác</th></tr></thead><tbody>${rows}</tbody></table></div>`;
       }
       else if (state.activeTab === 'payments') {
         let rows = '';
@@ -5331,6 +5407,8 @@ const DEFAULT_CAPITAL_SOURCES = [
     window.optimizeAllContractsSources = optimizeAllContractsSources;
     window.autoAllocateSources = autoAllocateSources;
     window.buildLichSuNguonFromAllocation = buildLichSuNguonFromAllocation;
+    window.calculateNgayVaySauDao = calculateNgayVaySauDao;
+    window.calculateInterestFromNgayVaySauDao = calculateInterestFromNgayVaySauDao;
 
     // === Hỗ trợ modal Hợp đồng: tự động phân bổ + preview ===
     window._pendingContractAllocation = null;
