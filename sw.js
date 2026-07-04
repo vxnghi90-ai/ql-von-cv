@@ -1,10 +1,11 @@
-const CACHE_NAME = 'ql-von-cv-v4';
+const CACHE_NAME = 'ql-von-cv-v5';
 const urlsToCache = [
   './',
   './index.html',
   './manifest.json',
   './icon-192.svg',
-  './icon-512.svg'
+  './icon-512.svg',
+  'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js'
 ];
 
 // Install event - cache the app shell

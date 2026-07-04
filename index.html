@@ -9,9 +9,10 @@
   <meta name="theme-color" content="#0f172a">
   <title>Ứng Dụng Quản Lý Vốn CV (Bản Chuẩn Offline)</title>
   
-  <!-- PWA Manifest & Google GIS Client -->
+  <!-- PWA Manifest & Google GIS Client & Chart.js -->
   <link rel="manifest" href="manifest.json">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   
   <!-- Service Worker Registration with Update Handling -->
   <script>
@@ -113,6 +114,44 @@
     /* iOS: prevent auto-zoom on input focus */
     @media (max-width: 1023px) {
       input, select, textarea { font-size: 16px !important; }
+    }
+
+    /* Dark Mode styles */
+    body.dark-mode {
+      background-color: #090d16 !important;
+      color: #f1f5f9 !important;
+    }
+    body.dark-mode .bg-white {
+      background-color: #0f172a !important;
+      color: #f1f5f9 !important;
+      border-color: #1e293b !important;
+    }
+    body.dark-mode .bg-slate-50 {
+      background-color: #020617 !important;
+      color: #cbd5e1 !important;
+      border-color: #1e293b !important;
+    }
+    body.dark-mode .bg-slate-100 {
+      background-color: #1e293b !important;
+      color: #cbd5e1 !important;
+    }
+    body.dark-mode .text-slate-900, body.dark-mode .text-slate-800, body.dark-mode .text-slate-700 {
+      color: #f8fafc !important;
+    }
+    body.dark-mode .text-slate-600, body.dark-mode .text-slate-500 {
+      color: #94a3b8 !important;
+    }
+    body.dark-mode .border-slate-100, body.dark-mode .border-slate-200 {
+      border-color: #1e293b !important;
+    }
+    body.dark-mode input, body.dark-mode select, body.dark-mode textarea {
+      background-color: #020617 !important;
+      color: #f8fafc !important;
+      border-color: #334155 !important;
+    }
+    body.dark-mode .bottom-nav {
+      background-color: #0f172ae6 !important;
+      border-color: #1e293b !important;
     }
   </style>
 
@@ -2009,6 +2048,337 @@ const DEFAULT_CAPITAL_SOURCES = [
       return stats;
     }
 
+    // === DARK / LIGHT THEME TOGGLE ===
+    function toggleTheme() {
+      state.theme = state.theme === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('app_theme', state.theme);
+      applyTheme();
+      if (window.renderApp) window.renderApp();
+    }
+    function applyTheme() {
+      if (state.theme === 'dark') {
+        document.body.classList.add('dark-mode');
+      } else {
+        document.body.classList.remove('dark-mode');
+      }
+    }
+    window.toggleTheme = toggleTheme;
+    window.applyTheme = applyTheme;
+
+    // === AI CREDIT RISK SCORING FOR CUSTOMERS ===
+    function calculateCustomerRisk(cust) {
+      if (!cust || !state.contracts) return { level: 'vip', label: '🟢 KH VIP', badge: '<span class="bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md text-[10px] font-bold">🟢 KH VIP</span>' };
+      const custContracts = state.contracts.filter(c => c.MaKH === cust.MaKH && c.TrangThai === 'Đang vay');
+      let hasOverdue = false;
+      let hasDueTodayOrSoon = false;
+      custContracts.forEach(contract => {
+        const status = getContractWarningStatus(contract);
+        if (status.type === 'overdue') hasOverdue = true;
+        if (status.type === 'due_today' || status.type === 'due_soon') hasDueTodayOrSoon = true;
+      });
+      if (hasOverdue) {
+        return { level: 'high', label: '🔴 Rủi ro cao', badge: '<span class="bg-rose-100 text-rose-800 border border-rose-200 px-2 py-0.5 rounded-md text-[10px] font-bold">🔴 Rủi ro cao</span>' };
+      }
+      if (hasDueTodayOrSoon) {
+        return { level: 'medium', label: '🟡 Cần lưu ý', badge: '<span class="bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-md text-[10px] font-bold">🟡 Cần lưu ý</span>' };
+      }
+      return { level: 'vip', label: '🟢 KH VIP', badge: '<span class="bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md text-[10px] font-bold">🟢 KH VIP</span>' };
+    }
+    window.calculateCustomerRisk = calculateCustomerRisk;
+
+    // === SMART CAPITAL ALLOCATION AI RECOMMENDATION ===
+    function getSmartCapitalAllocationSuggestion(soTienVay = 0) {
+      if (!soTienVay || soTienVay <= 0) return null;
+      const statsObj = getStats();
+      let candidates = (state.capitalSources || []).map(src => {
+        const det = statsObj.sourceDetails[src.MaNguon] || { tongVonHienTai: 0, duNoChoVay: 0 };
+        const vonGoc = det.tongVonHienTai;
+        const vonDaDung = det.duNoChoVay || 0;
+        const conDu = vonGoc - vonDaDung;
+        const partnerPercent = src.PhanTramChiaLai !== undefined ? src.PhanTramChiaLai : (src.MaNguon === 'GOP_VON' ? 50 : 0);
+        return { src, conDu, partnerPercent };
+      });
+      candidates.sort((a, b) => {
+        if (a.conDu > 0 && b.conDu <= 0) return -1;
+        if (b.conDu > 0 && a.conDu <= 0) return 1;
+        return a.partnerPercent - b.partnerPercent;
+      });
+
+      const best = candidates.find(c => c.conDu >= soTienVay) || candidates[0];
+      if (!best) return null;
+      
+      if (best.partnerPercent === 0) {
+        return {
+          source: best.src,
+          text: `💡 AI Gợi ý: Ưu tiên rút từ <b>${best.src.TenNguon}</b> (Chi phí 0%) để giữ 100% tiền lãi bỏ túi.`
+        };
+      } else {
+        return {
+          source: best.src,
+          text: `💡 AI Gợi ý: Nguồn <b>${best.src.TenNguon}</b> còn dư ${formatVND(best.conDu)} (Chia lãi ${best.partnerPercent}%).`
+        };
+      }
+    }
+    window.getSmartCapitalAllocationSuggestion = getSmartCapitalAllocationSuggestion;
+
+    // === DASHBOARD VISUAL CHARTS (Chart.js) ===
+    function renderDashboardCharts() {
+      if (state.activeTab !== 'dashboard') return;
+      const stats = getStats();
+      
+      // Chart 1: Donut Chart - Dư Nợ Theo Nguồn Vốn
+      const ctx1 = document.getElementById('chart-capital-allocation');
+      if (ctx1 && typeof Chart !== 'undefined') {
+        if (window._chart1) window._chart1.destroy();
+        const labels = [];
+        const dataVals = [];
+        const bgColors = ['#10b981', '#6366f1', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
+        
+        (state.capitalSources || []).forEach(src => {
+          const det = stats.sourceDetails[src.MaNguon] || { duNoChoVay: 0 };
+          labels.push(src.TenNguon);
+          dataVals.push(det.duNoChoVay || 0);
+        });
+        
+        window._chart1 = new Chart(ctx1, {
+          type: 'doughnut',
+          data: {
+            labels: labels,
+            datasets: [{
+              data: dataVals,
+              backgroundColor: bgColors.slice(0, labels.length),
+              borderWidth: 2,
+              borderColor: state.theme === 'dark' ? '#0f172a' : '#ffffff'
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+              tooltip: {
+                callbacks: {
+                  label: function(context) { return context.label + ': ' + formatVND(context.raw); }
+                }
+              }
+            }
+          }
+        });
+      }
+
+      // Chart 2: Bar Chart - Doanh Thu Lãi Đã Thu Theo Tháng
+      const ctx2 = document.getElementById('chart-monthly-revenue');
+      if (ctx2 && typeof Chart !== 'undefined') {
+        if (window._chart2) window._chart2.destroy();
+        
+        const monthMap = {};
+        const months = [];
+        const now = new Date();
+        for (let i = 5; i >= 0; i--) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+          const label = 'Thg ' + (d.getMonth() + 1);
+          monthMap[key] = { label: label, amount: 0 };
+          months.push(key);
+        }
+        
+        (state.payments || []).forEach(p => {
+          if (p.LoaiThanhToan === 'Trả lãi' && p.NgayThanhToan) {
+            const key = p.NgayThanhToan.substring(0, 7);
+            if (monthMap[key]) {
+              monthMap[key].amount += (Number(p.SoTienTra) || 0) + (Number(p.TienKhuyenMai) || 0);
+            }
+          }
+        });
+        
+        window._chart2 = new Chart(ctx2, {
+          type: 'bar',
+          data: {
+            labels: months.map(k => monthMap[k].label),
+            datasets: [{
+              label: 'Lãi đã thu (VNĐ)',
+              data: months.map(k => monthMap[k].amount),
+              backgroundColor: '#10b981',
+              borderRadius: 8
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: function(context) { return 'Lãi thu: ' + formatVND(context.raw); }
+                }
+              }
+            },
+            scales: {
+              y: {
+                ticks: {
+                  callback: function(val) { return (val / 1000000) + 'M'; }
+                }
+              }
+            }
+          }
+        });
+      }
+    }
+    window.renderDashboardCharts = renderDashboardCharts;
+
+    // === QUICK NUMPAD POS MODAL FOR MOBILE ===
+    function openQuickPosModal() {
+      let modal = document.getElementById('quick-pos-modal');
+      if (!modal) {
+        const div = document.createElement('div');
+        div.innerHTML = renderQuickPosModalHTML();
+        document.body.appendChild(div.firstElementChild);
+      } else {
+        modal.outerHTML = renderQuickPosModalHTML();
+      }
+      window.showModal('quick-pos-modal');
+    }
+    window.openQuickPosModal = openQuickPosModal;
+
+    function renderQuickPosModalHTML() {
+      let custOpts = '<option value="">-- Chọn khách hàng --</option>';
+      (state.customers || []).forEach(c => {
+        custOpts += `<option value="${c.MaKH}">${c.MaKH} - ${c.TenKhachHang}</option>`;
+      });
+
+      return `
+        <div id="quick-pos-modal" class="fixed inset-0 bg-black/70 hidden flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-100">
+            <div class="flex items-center justify-between border-b pb-3">
+              <div class="flex items-center gap-2">
+                <span class="p-2 bg-amber-100 text-amber-800 rounded-xl font-black text-sm">⚡ POS</span>
+                <h3 class="font-extrabold text-slate-900 text-lg">Thu Tiền Nhanh</h3>
+              </div>
+              <button onclick="window.closeModal && window.closeModal('quick-pos-modal')" class="text-slate-400 hover:text-slate-600 font-bold text-xl">✕</button>
+            </div>
+
+            <div class="space-y-3">
+              <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Khách Hàng</label>
+                <select id="pos-cust-select" onchange="window.onPosCustomerChange && window.onPosCustomerChange(this.value)" class="w-full border p-2.5 text-sm rounded-xl font-bold bg-slate-50 text-slate-900 focus:outline-none focus:border-indigo-500">${custOpts}</select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Hợp Đồng</label>
+                <select id="pos-contract-select" onchange="window.onPosContractChange && window.onPosContractChange(this.value)" class="w-full border p-2.5 text-sm rounded-xl font-bold bg-slate-50 text-indigo-700 focus:outline-none focus:border-indigo-500">
+                  <option value="">-- Chọn hợp đồng --</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Số tiền đóng (VNĐ)</label>
+                <div class="relative">
+                  <input type="text" id="pos-amount-input" class="w-full border-2 border-indigo-500 p-3 rounded-2xl text-right font-black text-2xl text-emerald-600 bg-emerald-50/50 focus:outline-none" value="0" readonly />
+                </div>
+              </div>
+
+              <!-- Touch Numpad Grid -->
+              <div class="grid grid-cols-3 gap-2 pt-2">
+                <button type="button" onclick="window.pressPosKey('1')" class="py-3 bg-slate-100 hover:bg-slate-200 active:bg-indigo-100 text-slate-900 font-black text-xl rounded-2xl transition-all shadow-sm">1</button>
+                <button type="button" onclick="window.pressPosKey('2')" class="py-3 bg-slate-100 hover:bg-slate-200 active:bg-indigo-100 text-slate-900 font-black text-xl rounded-2xl transition-all shadow-sm">2</button>
+                <button type="button" onclick="window.pressPosKey('3')" class="py-3 bg-slate-100 hover:bg-slate-200 active:bg-indigo-100 text-slate-900 font-black text-xl rounded-2xl transition-all shadow-sm">3</button>
+                <button type="button" onclick="window.pressPosKey('4')" class="py-3 bg-slate-100 hover:bg-slate-200 active:bg-indigo-100 text-slate-900 font-black text-xl rounded-2xl transition-all shadow-sm">4</button>
+                <button type="button" onclick="window.pressPosKey('5')" class="py-3 bg-slate-100 hover:bg-slate-200 active:bg-indigo-100 text-slate-900 font-black text-xl rounded-2xl transition-all shadow-sm">5</button>
+                <button type="button" onclick="window.pressPosKey('6')" class="py-3 bg-slate-100 hover:bg-slate-200 active:bg-indigo-100 text-slate-900 font-black text-xl rounded-2xl transition-all shadow-sm">6</button>
+                <button type="button" onclick="window.pressPosKey('7')" class="py-3 bg-slate-100 hover:bg-slate-200 active:bg-indigo-100 text-slate-900 font-black text-xl rounded-2xl transition-all shadow-sm">7</button>
+                <button type="button" onclick="window.pressPosKey('8')" class="py-3 bg-slate-100 hover:bg-slate-200 active:bg-indigo-100 text-slate-900 font-black text-xl rounded-2xl transition-all shadow-sm">8</button>
+                <button type="button" onclick="window.pressPosKey('9')" class="py-3 bg-slate-100 hover:bg-slate-200 active:bg-indigo-100 text-slate-900 font-black text-xl rounded-2xl transition-all shadow-sm">9</button>
+                <button type="button" onclick="window.pressPosKey('C')" class="py-3 bg-rose-100 hover:bg-rose-200 text-rose-700 font-extrabold text-base rounded-2xl transition-all shadow-sm">Xóa</button>
+                <button type="button" onclick="window.pressPosKey('0')" class="py-3 bg-slate-100 hover:bg-slate-200 active:bg-indigo-100 text-slate-900 font-black text-xl rounded-2xl transition-all shadow-sm">0</button>
+                <button type="button" onclick="window.pressPosKey('000')" class="py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-sm rounded-2xl transition-all shadow-sm">000</button>
+              </div>
+
+              <button onclick="window.submitPosPayment && window.submitPosPayment()" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-base rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 mt-2">
+                💰 XÁC NHẬN THU TIỀN
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+    window.renderQuickPosModalHTML = renderQuickPosModalHTML;
+
+    function pressPosKey(key) {
+      const inp = document.getElementById('pos-amount-input');
+      if (!inp) return;
+      let raw = inp.value.replace(/[^0-9]/g, '');
+      if (key === 'C') {
+        raw = '0';
+      } else {
+        if (raw === '0') raw = '';
+        raw += key;
+      }
+      const num = Number(raw) || 0;
+      inp.value = formatVND(num);
+    }
+    window.pressPosKey = pressPosKey;
+
+    function onPosCustomerChange(maKH) {
+      const sel = document.getElementById('pos-contract-select');
+      if (!sel) return;
+      const contracts = (state.contracts || []).filter(c => c.MaKH === maKH && c.TrangThai === 'Đang vay');
+      let opts = '<option value="">-- Chọn hợp đồng --</option>';
+      contracts.forEach(c => {
+        opts += `<option value="${c.MaHopDong}">${c.MaHopDong} - Vay: ${formatVND(c.SoTienVay)}</option>`;
+      });
+      sel.innerHTML = opts;
+      if (contracts.length === 1) {
+        sel.value = contracts[0].MaHopDong;
+        onPosContractChange(contracts[0].MaHopDong);
+      }
+    }
+    window.onPosCustomerChange = onPosCustomerChange;
+
+    function onPosContractChange(maHD) {
+      if (!maHD) return;
+      const contract = (state.contracts || []).find(c => c.MaHopDong === maHD);
+      if (!contract) return;
+      const sug = getCurrentCycleInterestSuggestion(contract);
+      const inp = document.getElementById('pos-amount-input');
+      if (inp) {
+        inp.value = formatVND(sug.amount || 0);
+      }
+    }
+    window.onPosContractChange = onPosContractChange;
+
+    function submitPosPayment() {
+      const maHD = document.getElementById('pos-contract-select')?.value;
+      const amtStr = document.getElementById('pos-amount-input')?.value || '0';
+      const amt = Number(amtStr.replace(/[^0-9]/g, ''));
+
+      if (!maHD) return showAlert("Lỗi", "Vui lòng chọn Hợp đồng cần thu tiền!");
+      if (!amt || amt <= 0) return showAlert("Lỗi", "Số tiền thu phải lớn hơn 0!");
+
+      const contract = (state.contracts || []).find(c => c.MaHopDong === maHD);
+      if (!contract) return showAlert("Lỗi", "Hợp đồng không tồn tại!");
+
+      const sug = getCurrentCycleInterestSuggestion(contract);
+      const newPayment = {
+        MaThanhToan: 'TT_' + Date.now(),
+        MaHopDong: maHD,
+        NgayThanhToan: new Date().toISOString().split('T')[0],
+        SoTienTra: amt,
+        LoaiThanhToan: 'Trả lãi',
+        TrangThaiThu: 'DaNop',
+        NguoiThuHo: 'Chủ tiệm',
+        KyLaiTu: sug.startDate,
+        KyLaiDen: sug.endDate
+      };
+
+      executeSave('payments', newPayment.MaThanhToan, newPayment, () => {
+        state.payments.unshift(newPayment);
+        window.closeModal('quick-pos-modal');
+        showNotification(`⚡ POS: Đã thu ${formatVND(amt)} cho hợp đồng ${maHD}!`);
+        if (window.renderApp) window.renderApp();
+      });
+    }
+    window.submitPosPayment = submitPosPayment;
+
     async function executeSave(collectionName, docId, data, offlineCallback) {
       offlineCallback(); 
       saveStateOfflineAndRefresh(true);
@@ -2818,8 +3188,10 @@ const DEFAULT_CAPITAL_SOURCES = [
           <div class="flex flex-wrap items-center gap-2">
             ${searchAndFilterHTML}
             ${headerButtonsHTML}
+            <button onclick="window.openQuickPosModal && window.openQuickPosModal()" class="bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs sm:text-sm px-3 py-2 rounded-xl flex items-center gap-1 shadow-sm transition-all">⚡ POS Thu Nhanh</button>
             <button onclick="window.openExportExcelModal && window.openExportExcelModal('${state.activeTab}')" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all font-semibold">📊 Export Excel</button>
             <button onclick="window.openPaymentModal && window.openPaymentModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all">${getIconSVG('dollar', 'w-4 h-4')} Đóng Lãi / Tất Toán</button>
+            <button onclick="window.toggleTheme && window.toggleTheme()" class="bg-slate-800 hover:bg-slate-700 text-amber-400 font-extrabold text-sm px-3 py-2 rounded-xl flex items-center gap-1 shadow-sm transition-all" title="Chuyển chế độ Đêm/Sáng">${state.theme === 'dark' ? '☀️ Sáng' : '🌙 Đêm'}</button>
           </div>
         </div>
       `;
@@ -3349,6 +3721,26 @@ const DEFAULT_CAPITAL_SOURCES = [
           <!-- Calendar: large, prominent, early in dashboard for due date overview and planning new contracts -->
           ${calSection}
 
+          <!-- VISUAL CHARTS SECTION (Chart.js) -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+              <h4 class="font-bold text-slate-800 text-sm uppercase mb-3 flex items-center justify-between">
+                <span>📊 Cơ Cấu Dư Nợ Theo Nguồn Vốn</span>
+              </h4>
+              <div class="h-64 relative">
+                <canvas id="chart-capital-allocation"></canvas>
+              </div>
+            </div>
+            <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+              <h4 class="font-bold text-slate-800 text-sm uppercase mb-3 flex items-center justify-between">
+                <span>📈 Doanh Thu Lãi Đã Thu Theo Tháng</span>
+              </h4>
+              <div class="h-64 relative">
+                <canvas id="chart-monthly-revenue"></canvas>
+              </div>
+            </div>
+          </div>
+
           <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-6"><h4 class="font-bold text-slate-800 text-sm uppercase mb-4">Dòng vốn đầu vào & Trích tách chi phí</h4><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">${sourcesHTML}</div></div>
 
           ${staffHTML}
@@ -3742,16 +4134,17 @@ const DEFAULT_CAPITAL_SOURCES = [
           return c && c.MaKH === cust.MaKH && p.LoaiThanhToan === 'Trả lãi';
         });
         let tongLaiDaDong = custPays.reduce((sum, p) => sum + Number(p.SoTienTra || 0) + Number(p.TienKhuyenMai || 0), 0);
-        
+        const risk = calculateCustomerRisk(cust);
         const phoneCall = cust.SoDienThoai ? `<a href="tel:${cust.SoDienThoai}" class="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-2.5 py-1 rounded-lg text-xs font-bold transition-all">📞 ${cust.SoDienThoai}</a>` : '<span class="text-xs text-slate-400">Không SĐT</span>';
 
         return `
           <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-3">
             <div class="flex items-start justify-between">
               <div>
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 flex-wrap">
                   <span class="bg-slate-100 text-slate-700 font-mono text-xs font-black px-2 py-0.5 rounded-md border">${cust.MaKH}</span>
                   <span class="font-extrabold text-slate-900 text-base">${cust.TenKhachHang}</span>
+                  ${risk.badge}
                 </div>
                 ${cust.DiaChi ? `<div class="text-xs text-slate-500 mt-1 flex items-center gap-1">📍 ${cust.DiaChi}</div>` : ''}
               </div>
@@ -3813,10 +4206,11 @@ const DEFAULT_CAPITAL_SOURCES = [
           return c && c.MaKH === cust.MaKH && p.LoaiThanhToan === 'Trả lãi';
         });
         let tongLaiDaDong = custPays.reduce((sum, p) => sum + Number(p.SoTienTra || 0) + Number(p.TienKhuyenMai || 0), 0);
+        const risk = calculateCustomerRisk(cust);
 
         rows += `<tr class="border-t hover:bg-slate-50">
           <td class="p-4 font-bold text-slate-700">${cust.MaKH}</td>
-          <td class="p-4 font-semibold text-slate-900">${cust.TenKhachHang}</td>
+          <td class="p-4 font-semibold text-slate-900 flex items-center gap-2">${cust.TenKhachHang} ${risk.badge}</td>
           <td class="p-4 text-slate-600">${cust.SoDienThoai}</td>
           <td class="p-4 text-slate-500">${cust.DiaChi}</td>
           <td class="p-4 text-right font-bold">${formatVND(tongVay)}</td>
@@ -4321,6 +4715,20 @@ const DEFAULT_CAPITAL_SOURCES = [
       `;
     }
 
+    function updateModalAiHint(val) {
+      const num = Number(val) || 0;
+      const hintEl = document.getElementById('cm-ai-hint');
+      if (!hintEl) return;
+      const sug = getSmartCapitalAllocationSuggestion(num);
+      if (sug) {
+        hintEl.innerHTML = sug.text;
+        hintEl.classList.remove('hidden');
+      } else {
+        hintEl.classList.add('hidden');
+      }
+    }
+    window.updateModalAiHint = updateModalAiHint;
+
     function renderContractModalHTML() {
       const data = state.editingContract || {
         MaHopDong: getNextHopDongMa(),
@@ -4390,7 +4798,7 @@ const DEFAULT_CAPITAL_SOURCES = [
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Số Vốn Cho Vay (VNĐ) <span class="text-rose-500">*</span></label>
-                    <input type="number" name="SoTienVay" value="${data.SoTienVay || ''}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-indigo-500 font-extrabold text-slate-900 bg-white" placeholder="Nhập số tiền..." required />
+                    <input type="number" name="SoTienVay" value="${data.SoTienVay || ''}" oninput="window.updateModalAiHint && window.updateModalAiHint(this.value)" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none focus:border-indigo-500 font-extrabold text-slate-900 bg-white" placeholder="Nhập số tiền..." required />
                   </div>
                   <div>
                     <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Nguồn Vốn Giải Ngân <span class="text-rose-500">*</span></label>
@@ -4399,6 +4807,9 @@ const DEFAULT_CAPITAL_SOURCES = [
                   <div class="md:col-span-2">
                     <button type="button" onclick="window.autoAllocateForModal && window.autoAllocateForModal(true)" class="text-[11px] px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-sm transition-all">Tự động phân bổ nguồn vốn (ưu tiên lãi suất thấp nhất)</button>
                     <div id="alloc-preview" class="text-[10px] text-slate-600 min-h-[10px]"></div>
+                    <div id="cm-ai-hint" class="text-xs p-2.5 bg-indigo-50 border border-indigo-200 rounded-xl text-indigo-900 font-semibold mt-1">
+                      ${(getSmartCapitalAllocationSuggestion(data.SoTienVay || 10000000) || {}).text || ''}
+                    </div>
                   </div>
                   
                   <!-- Dành cho Vay Thuong -->
