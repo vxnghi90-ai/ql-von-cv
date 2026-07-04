@@ -1005,7 +1005,7 @@ const DEFAULT_CAPITAL_SOURCES = [
         console.warn("Google API Client library not loaded yet.");
         return;
       }
-      const clientId = localStorage.getItem('loan_gdrive_client_id') || '1047714881858-j9o1h0h5n54286786.apps.googleusercontent.com';
+      const clientId = localStorage.getItem('loan_gdrive_client_id') || '794233984174-vpq6ondmeflaj43dfgsab5bk26jmeg7t.apps.googleusercontent.com';
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: clientId,
         scope: 'https://www.googleapis.com/auth/drive.file',
@@ -4142,7 +4142,7 @@ const DEFAULT_CAPITAL_SOURCES = [
               
               <div class="mb-4">
                 <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Custom Google Client ID (Bắt buộc)</label>
-                <input type="text" id="gdrive-client-id" class="w-full border p-2 text-xs rounded-xl focus:outline-none focus:border-indigo-500" placeholder="Dán Client ID từ Google Cloud Console vào đây" value="${localStorage.getItem('loan_gdrive_client_id') || ''}" onchange="localStorage.setItem('loan_gdrive_client_id', this.value.trim()); if(window.initGoogleAuth) window.initGoogleAuth();" />
+                <input type="text" id="gdrive-client-id" class="w-full border p-2 text-xs rounded-xl focus:outline-none focus:border-indigo-500 font-mono text-[11px]" placeholder="Dán Client ID từ Google Cloud Console vào đây" value="${localStorage.getItem('loan_gdrive_client_id') || '794233984174-vpq6ondmeflaj43dfgsab5bk26jmeg7t.apps.googleusercontent.com'}" onchange="localStorage.setItem('loan_gdrive_client_id', this.value.trim()); if(window.initGoogleAuth) window.initGoogleAuth();" />
                 <p class="text-[9px] text-slate-400 mt-1 leading-relaxed">
                   ⚠️ Google chặn đăng nhập từ tệp thô (<code class="bg-slate-100 text-slate-700 px-1 rounded">file:///</code>). 
                   Bạn <b>phải chạy server cục bộ</b> và mở qua địa chỉ <code class="bg-indigo-50 text-indigo-700 px-1 rounded">http://localhost:3000</code> hoặc IP Wi-Fi để dùng tính năng này.
