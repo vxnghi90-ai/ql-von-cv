@@ -1041,6 +1041,23 @@ const DEFAULT_CAPITAL_SOURCES = [
       if (window.renderApp) window.renderApp();
     }
 
+    async function checkGoogleDriveResponse(res) {
+      if (res.status === 401) {
+        state.gdriveToken = null;
+        localStorage.removeItem('loan_gdrive_token');
+        if (window.renderApp) window.renderApp();
+        showConfirm("Kết nối hết hạn", "Phiên làm việc Google Drive đã hết hạn. Bạn có muốn kết nối lại ngay?", () => {
+          connectGoogleDrive();
+        });
+        throw new Error("Phiên làm việc Google Drive đã hết hạn");
+      }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const errMsg = errData.error && errData.error.message ? errData.error.message : `HTTP status ${res.status}`;
+        throw new Error(errMsg);
+      }
+    }
+
     async function backupToGoogleDrive() {
       if (!state.gdriveToken) {
         return connectGoogleDrive();
@@ -1064,6 +1081,7 @@ const DEFAULT_CAPITAL_SOURCES = [
         const searchRes = await fetch(searchUrl, {
           headers: { 'Authorization': `Bearer ${state.gdriveToken}` }
         });
+        await checkGoogleDriveResponse(searchRes);
         const searchData = await searchRes.json();
         
         let fileId = '';
@@ -1082,11 +1100,12 @@ const DEFAULT_CAPITAL_SOURCES = [
               mimeType: 'application/json'
             })
           });
+          await checkGoogleDriveResponse(createRes);
           const createData = await createRes.json();
           fileId = createData.id;
         }
         
-        if (!fileId) throw new Error("Không thể khởi tạo tệp tin trên Google Drive");
+        if (!fileId) throw new Error("Không thể khởi tạo hoặc tìm thấy ID tệp tin trên Google Drive");
         
         const uploadUrl = `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`;
         const uploadRes = await fetch(uploadUrl, {
@@ -1097,15 +1116,14 @@ const DEFAULT_CAPITAL_SOURCES = [
           },
           body: encrypted
         });
+        await checkGoogleDriveResponse(uploadRes);
         
-        if (uploadRes.status === 200) {
-          showNotification("Đã sao lưu lên Google Drive thành công!");
-        } else {
-          throw new Error("Lỗi khi tải dữ liệu lên: Status " + uploadRes.status);
-        }
+        showNotification("Đã sao lưu lên Google Drive thành công!");
       } catch (err) {
         console.error("Lỗi Google Drive Backup:", err);
-        showAlert("Lỗi Sao Lưu", "Không thể lưu trữ lên Google Drive: " + err.message);
+        if (err.message !== "Phiên làm việc Google Drive đã hết hạn") {
+          showAlert("Lỗi Sao Lưu", "Không thể lưu trữ lên Google Drive: " + err.message);
+        }
       }
     }
 
@@ -1123,10 +1141,12 @@ const DEFAULT_CAPITAL_SOURCES = [
         const searchRes = await fetch(searchUrl, {
           headers: { 'Authorization': `Bearer ${state.gdriveToken}` }
         });
+        await checkGoogleDriveResponse(searchRes);
         const searchData = await searchRes.json();
         
         if (!searchData.files || searchData.files.length === 0) {
-          return showAlert("Không tìm thấy", "Không tìm thấy tệp sao lưu 'QuanLyVayTien_Backup.enc.json' trên tài khoản Google Drive này.");
+          showAlert("Không tìm thấy", "Không tìm thấy tệp sao lưu 'QuanLyVayTien_Backup.enc.json' trên tài khoản Google Drive này.");
+          return;
         }
         
         const fileId = searchData.files[0].id;
@@ -1134,6 +1154,7 @@ const DEFAULT_CAPITAL_SOURCES = [
         const downloadRes = await fetch(downloadUrl, {
           headers: { 'Authorization': `Bearer ${state.gdriveToken}` }
         });
+        await checkGoogleDriveResponse(downloadRes);
         const encrypted = await downloadRes.text();
         
         try {
@@ -1157,7 +1178,9 @@ const DEFAULT_CAPITAL_SOURCES = [
         }
       } catch (err) {
         console.error("Lỗi Google Drive Restore:", err);
-        showAlert("Lỗi Khôi Phục", "Không thể khôi phục từ Google Drive: " + err.message);
+        if (err.message !== "Phiên làm việc Google Drive đã hết hạn") {
+          showAlert("Lỗi Khôi Phục", "Không thể khôi phục từ Google Drive: " + err.message);
+        }
       }
     }
 
@@ -2021,6 +2044,7 @@ const DEFAULT_CAPITAL_SOURCES = [
       let changed = false;
       state.contracts.forEach(c => {
         if (c.TrangThai !== 'Đang vay') return;
+        if (c.NgayDaoHanManual) return; // Bỏ qua nếu người dùng đã tự sửa ngày đáo hạn thủ công
 
         // Tìm các giao dịch trả lãi của hợp đồng này, sắp xếp từ cũ nhất đến mới nhất theo KyLaiDen hoặc NgayThanhToan
         const cPayments = (state.payments || [])
@@ -2028,15 +2052,12 @@ const DEFAULT_CAPITAL_SOURCES = [
           .sort((a, b) => (a.KyLaiDen || a.NgayThanhToan || '').localeCompare(b.KyLaiDen || b.NgayThanhToan || ''));
 
         if (cPayments.length === 0) {
-          // Nếu chưa có giao dịch trả lãi nào, kỳ hạn đáo hạn ban đầu phải là Ngày Vay + 30 ngày
-          if (c.NgayVay) {
+          // Nếu chưa có giao dịch trả lãi nào, giữ nguyên ngày đáo hạn nếu đã có, chỉ điền mặc định nếu trống
+          if (!c.NgayDaoHan && c.NgayVay) {
             const start = new Date(c.NgayVay);
             start.setDate(start.getDate() + 30);
-            const expectedDaoHan = start.toISOString().split('T')[0];
-            if (c.NgayDaoHan !== expectedDaoHan) {
-              c.NgayDaoHan = expectedDaoHan;
-              changed = true;
-            }
+            c.NgayDaoHan = start.toISOString().split('T')[0];
+            changed = true;
           }
           return;
         }
@@ -2514,6 +2535,7 @@ const DEFAULT_CAPITAL_SOURCES = [
 
       executeSave('payments', newPayment.MaThanhToan, newPayment, () => {
         state.payments.unshift(newPayment);
+        if (contract) contract.NgayDaoHanManual = false;
         recalculateAllDueDates();
         window.closeModal('quick-pos-modal');
         showNotification(`⚡ POS: Đã thu ${formatVND(amt)} cho hợp đồng ${maHD}!`);
@@ -2813,6 +2835,17 @@ const DEFAULT_CAPITAL_SOURCES = [
         }
       }
 
+      // Check if user manually changed NgayDaoHan
+      if (oldC) {
+        if (contractData.NgayDaoHan !== oldC.NgayDaoHan) {
+          contractData.NgayDaoHanManual = true;
+        } else if (oldC.NgayDaoHanManual) {
+          contractData.NgayDaoHanManual = true;
+        }
+      } else {
+        contractData.NgayDaoHanManual = true;
+      }
+
       executeSave('contracts', contractData.MaHopDong, contractData, () => {
         if (state.editingContract) {
           const old = state.contracts.find(c => c.MaHopDong === contractData.MaHopDong);
@@ -2897,7 +2930,7 @@ const DEFAULT_CAPITAL_SOURCES = [
           }
           
           const newNgayDaoHan = baseDate.toISOString().split('T')[0];
-          const updatedC = { ...contract, NgayDaoHan: newNgayDaoHan };
+          const updatedC = { ...contract, NgayDaoHan: newNgayDaoHan, NgayDaoHanManual: false };
           state.contracts = state.contracts.map(c => c.MaHopDong === p.MaHopDong ? updatedC : c);
         }
       }
@@ -4216,6 +4249,9 @@ const DEFAULT_CAPITAL_SOURCES = [
       finalHTML += renderCustomerModalHTML() + renderCapitalSourceModalHTML() + renderContractModalHTML() + renderPaymentModalHTML() + renderCapitalAdjustmentModalHTML() + renderWithdrawInterestModalHTML() + renderPartnerWithdrawModalHTML() + renderPartnerHistoryModalHTML() + renderExportExcelModalHTML() + renderChangePINModalHTML();
 
       container.innerHTML = finalHTML;
+      if (state.activeTab === 'dashboard') {
+        renderDashboardCharts();
+      }
       } catch(e) {
         try {
           container.innerHTML = '<div style="padding:16px;color:#f87171;background:#0f172a;font-family:monospace;white-space:pre-wrap">Lỗi khi vẽ giao diện: ' + (e && e.message || e) + '\n\nThử bấm nút ở màn hình loading hoặc reload file.</div>';
@@ -5068,7 +5104,74 @@ const DEFAULT_CAPITAL_SOURCES = [
          const cu = state.customers.find(x=>x.MaKH===c.MaKH);
          return `<option value="${c.MaHopDong}">${c.MaHopDong} - ${cu?cu.TenKhachHang:''} (${formatVND(c.SoTienVay)})</option>`;
       }).join('');
-      return `<div id="payment-modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center z-50"><div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl animate-scaleIn"><h3 class="font-bold mb-4 text-slate-900 text-base">Lập Phiếu Thu Tiền Cho Vay</h3><form onsubmit="window.handleSavePayment && window.handleSavePayment(event)"><div class="space-y-3 mb-5"><select id="pm-MaHopDong" name="MaHopDong" onchange="window.onPaymentContractChange && window.onPaymentContractChange(this.value)" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none bg-white font-bold" required><option value="">-- Chọn Hợp Đồng Cho Vay --</option>${contOpts}</select><select name="LoaiThanhToan" onchange="window.onPaymentTypeChange && window.onPaymentTypeChange(this.value)" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none bg-white font-semibold text-indigo-700"><option value="Trả lãi">Trả lãi định kỳ</option><option value="Tất toán">Tất toán gốc</option></select><select name="TrangThaiThu" onchange="window.onTrangThaiThuChange && window.onTrangThaiThuChange(this.value)" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none bg-white font-semibold"><option value="DaNop">Chủ nhận trực tiếp (Nộp két)</option><option value="NhanVienGiu">Nhân viên thu hộ cầm tiền</option></select><div id="pm-staff-container" class="hidden"><input name="NguoiThuHo" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none" placeholder="Nhập tên nhân viên..." value="Nhân viên A" /></div><div id="pm-period-container" class="border border-indigo-200 bg-indigo-50/60 p-2 rounded-xl text-xs"><div class="font-bold text-indigo-700 mb-1 flex items-center gap-1">📅 Điều chỉnh ngày tính lãi/đóng lãi kỳ này <span class="text-[9px] font-normal text-indigo-500">(kể cả HĐ giải ngân + ngày tính lãi sau)</span></div><div class="grid grid-cols-2 gap-2"><div><label class="block text-[9px] text-slate-600">Kỳ lãi từ</label><input type="text" id="pm-KyLaiTu" name="KyLaiTu" class="w-full border p-1 text-xs rounded" placeholder="dd/mm/yyyy" onchange="window.updatePaymentInterestPreview&&window.updatePaymentInterestPreview()" /></div><div><label class="block text-[9px] text-slate-600">Kỳ lãi đến (ngày đóng lãi)</label><input type="text" id="pm-KyLaiDen" name="KyLaiDen" class="w-full border p-1 text-xs rounded font-bold" placeholder="dd/mm/yyyy" onchange="window.updatePaymentInterestPreview&&window.updatePaymentInterestPreview()" /></div></div><div class="mt-1 flex gap-2 items-center"><button type="button" onclick="window.updatePaymentInterestPreview&&window.updatePaymentInterestPreview(true)" class="px-2 py-0.5 bg-indigo-700 text-white rounded text-[10px] font-bold">Tính lãi kỳ</button><span id="pm-interest-preview" class="font-extrabold text-emerald-700 text-xs"></span></div><div id="pm-first-note" class="text-[9px] text-indigo-600 mt-0.5"></div></div><input type="number" id="pm-SoTienTra" name="SoTienTra" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none font-extrabold text-lg bg-slate-50" placeholder="Số tiền mặt nhận được..." required /><div id="pm-discount-container"><input type="number" name="TienKhuyenMai" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none text-rose-600 font-bold" placeholder="Tiền ưu đãi khuyến mại..." value="0" /></div><input type="date" name="NgayThanhToan" value="${new Date().toISOString().split('T')[0]}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none" required /><input name="GhiChu" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none" placeholder="Diễn giải nội dung thu tiền..." /></div><div class="flex justify-end gap-2"><button type="button" onclick="window.closeModal && window.closeModal('payment-modal')" class="px-4 py-2 bg-slate-100 text-slate-600 font-semibold text-sm rounded-xl">Hủy</button><button type="submit" class="px-4 py-2 bg-slate-900 text-white font-semibold text-sm rounded-xl">Xác nhận lập phiếu</button></div></form></div></div>`;
+      return `
+        <div id="payment-modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center z-50">
+          <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl animate-scaleIn">
+            <h3 class="font-bold mb-4 text-slate-900 text-base">Lập Phiếu Thu Tiền Cho Vay</h3>
+            <form onsubmit="window.handleSavePayment && window.handleSavePayment(event)">
+              <div class="space-y-3 mb-5">
+                <select id="pm-MaHopDong" name="MaHopDong" onchange="window.onPaymentContractChange && window.onPaymentContractChange(this.value)" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none bg-white font-bold" required>
+                  <option value="">-- Chọn Hợp Đồng Cho Vay --</option>
+                  ${contOpts}
+                </select>
+                <select name="LoaiThanhToan" onchange="window.onPaymentTypeChange && window.onPaymentTypeChange(this.value)" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none bg-white font-semibold text-indigo-700">
+                  <option value="Trả lãi">Trả lãi định kỳ</option>
+                  <option value="Tất toán">Tất toán gốc</option>
+                </select>
+                <select name="TrangThaiThu" onchange="window.onTrangThaiThuChange && window.onTrangThaiThuChange(this.value)" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none bg-white font-semibold">
+                  <option value="DaNop">Chủ nhận trực tiếp (Nộp két)</option>
+                  <option value="NhanVienGiu">Nhân viên thu hộ cầm tiền</option>
+                </select>
+                <div id="pm-staff-container" class="hidden">
+                  <input name="NguoiThuHo" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none" placeholder="Nhập tên nhân viên..." value="Nhân viên A" />
+                </div>
+                <div id="pm-period-container" class="border border-indigo-200 bg-indigo-50/60 p-2 rounded-xl text-xs">
+                  <div class="font-bold text-indigo-700 mb-1 flex items-center gap-1">📅 Điều chỉnh ngày tính lãi/đóng lãi kỳ này <span class="text-[9px] font-normal text-indigo-500">(kể cả HĐ giải ngân + ngày tính lãi sau)</span></div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="block text-[9px] text-slate-600">Kỳ lãi từ</label>
+                      <input type="text" id="pm-KyLaiTu" name="KyLaiTu" class="w-full border p-1 text-xs rounded" placeholder="dd/mm/yyyy" onchange="window.updatePaymentInterestPreview&&window.updatePaymentInterestPreview()" />
+                    </div>
+                    <div>
+                      <label class="block text-[9px] text-slate-600">Kỳ lãi đến (ngày đóng lãi)</label>
+                      <input type="text" id="pm-KyLaiDen" name="KyLaiDen" class="w-full border p-1 text-xs rounded font-bold" placeholder="dd/mm/yyyy" onchange="window.updatePaymentInterestPreview&&window.updatePaymentInterestPreview()" />
+                    </div>
+                  </div>
+                  <div class="mt-1 flex gap-2 items-center">
+                    <button type="button" onclick="window.updatePaymentInterestPreview&&window.updatePaymentInterestPreview(true)" class="px-2 py-0.5 bg-indigo-700 text-white rounded text-[10px] font-bold">Tính lãi kỳ</button>
+                    <span id="pm-interest-preview" class="font-extrabold text-emerald-700 text-xs"></span>
+                  </div>
+                  <div id="pm-first-note" class="text-[9px] text-indigo-600 mt-0.5"></div>
+                </div>
+                
+                <div>
+                  <label class="block text-xs font-bold text-slate-500 mb-1">Số tiền thu thực tế (VNĐ)</label>
+                  <input type="number" id="pm-SoTienTra" name="SoTienTra" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none font-extrabold text-lg bg-slate-50" placeholder="Số tiền mặt nhận được..." required />
+                </div>
+                
+                <div id="pm-discount-container">
+                  <label class="block text-xs font-bold text-slate-500 mb-1">Số tiền giảm trừ / Khuyến mại (VNĐ)</label>
+                  <input type="number" name="TienKhuyenMai" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none text-rose-600 font-bold" placeholder="Tiền ưu đãi khuyến mại..." value="0" />
+                </div>
+                
+                <div>
+                  <label class="block text-xs font-bold text-slate-500 mb-1">Ngày thu tiền thực tế</label>
+                  <input type="date" name="NgayThanhToan" value="${new Date().toISOString().split('T')[0]}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none" required />
+                </div>
+                
+                <div>
+                  <label class="block text-xs font-bold text-slate-500 mb-1">Ghi chú diễn giải</label>
+                  <input name="GhiChu" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none" placeholder="Diễn giải nội dung thu tiền..." />
+                </div>
+              </div>
+              <div class="flex justify-end gap-2">
+                <button type="button" onclick="window.closeModal && window.closeModal('payment-modal')" class="px-4 py-2 bg-slate-100 text-slate-600 font-semibold text-sm rounded-xl">Hủy</button>
+                <button type="submit" class="px-4 py-2 bg-slate-900 text-white font-semibold text-sm rounded-xl">Xác nhận lập phiếu</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      `;
     }
 
     function renderCapitalAdjustmentModalHTML() {
