@@ -1281,6 +1281,7 @@ const DEFAULT_CAPITAL_SOURCES = [
       partnerWithdrawals: [],
       customBaseTongLaiThucThu: 3763899,
       activeTab: 'dashboard',
+      dashboardSubTab: 'capital',
       searchTerm: '',
       customerSearchTerm: '',
       contractCustomerFilter: '',
@@ -3310,68 +3311,8 @@ const DEFAULT_CAPITAL_SOURCES = [
         warningHTML = `<div class="bg-rose-100 text-rose-800 p-4 mb-4 rounded-xl text-sm font-bold border border-rose-300">⚠️ CHÚ Ý: Bộ nhớ cục bộ bị trình duyệt chặn (privacy). Dữ liệu vẫn lưu nếu bạn cho phép, hoặc dùng Import/Export JSON để backup thủ công.</div>`;
       }
 
-      let sidebarHTML = `
-        <aside class="bg-slate-900 text-slate-300 w-64 flex flex-col border-r border-slate-800 hidden lg:flex flex-shrink-0">
-          <div class="p-6 flex items-center gap-3 border-b border-slate-800">
-            <div class="bg-emerald-500 p-2 rounded-xl shadow-lg shadow-emerald-500/20">${getIconSVG('dollar', 'w-6 h-6 text-slate-900')}</div>
-            <div><h1 class="font-extrabold text-lg tracking-tight text-white">VAY TIÊU DÙNG</h1><p class="text-xs text-slate-400 font-medium">Hệ Thống Quản Lý VIP (Offline)</p></div>
-          </div>
-          <div class="px-6 py-4 border-b border-slate-800 bg-slate-950/20">
-            <div class="flex items-center gap-2.5">
-              <span class="relative flex h-3 w-3"><span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 pulsing-dot"></span></span>
-              <div><p class="text-xs font-bold text-emerald-400 tracking-wide">BẢN CHUẨN OFFLINE</p><p class="text-[10px] text-slate-400 mt-0.5">Lưu tại thiết bị • Không cần mạng</p></div>
-            </div>
-          </div>
-          <nav class="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
-            <button onclick="if(window.state){ window.state.contractCustomerFilter=''; window.state.activeTab='dashboard'; if(window.renderApp) window.renderApp(); }" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${state.activeTab === 'dashboard' ? 'bg-emerald-500 text-slate-900 font-semibold shadow-lg shadow-emerald-500/10' : 'hover:bg-slate-800/60 hover:text-white'}">${getIconSVG('dashboard')} Tổng quan Dashboard</button>
-            <button onclick="if(window.state){ window.state.contractCustomerFilter=''; window.state.activeTab='customers'; if(window.renderApp) window.renderApp(); }" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${state.activeTab === 'customers' ? 'bg-emerald-500 text-slate-900 font-semibold shadow-lg shadow-emerald-500/10' : 'hover:bg-slate-800/60 hover:text-white'}">${getIconSVG('users')} Khách hàng <span class="ml-auto bg-slate-800 text-slate-400 text-xs px-2 py-0.5 rounded-full">${state.customers.length}</span></button>
-            <button onclick="if(window.state){ window.state.contractCustomerFilter=''; window.state.activeTab='capital_sources'; if(window.renderApp) window.renderApp(); }" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${state.activeTab === 'capital_sources' ? 'bg-emerald-500 text-slate-900 font-semibold shadow-lg shadow-emerald-500/10' : 'hover:bg-slate-800/60 hover:text-white'}">${getIconSVG('database')} Nguồn Vốn <span class="ml-auto bg-slate-800 text-slate-400 text-xs px-2 py-0.5 rounded-full">${state.capitalSources.length}</span></button>
-            <button onclick="if(window.state) window.state.activeTab='contracts'; if(window.renderApp) window.renderApp();" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${state.activeTab === 'contracts' ? 'bg-emerald-500 text-slate-900 font-semibold shadow-lg shadow-emerald-500/10' : 'hover:bg-slate-800/60 hover:text-white'}">${getIconSVG('fileText')} Hợp đồng <span class="ml-auto bg-slate-800 text-slate-400 text-xs px-2 py-0.5 rounded-full">${state.contracts.filter(c=>c.TrangThai==='Đang vay').length}</span></button>
-            <button onclick="if(window.state){ window.state.contractCustomerFilter=''; window.state.activeTab='payments'; if(window.renderApp) window.renderApp(); }" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${state.activeTab === 'payments' ? 'bg-emerald-500 text-slate-900 font-semibold shadow-lg shadow-emerald-500/10' : 'hover:bg-slate-800/60 hover:text-white'}">${getIconSVG('creditCard')} Nhật ký đóng tiền</button>
-            <button onclick="if(window.state){ window.state.contractCustomerFilter=''; window.state.activeTab='settings'; if(window.renderApp) window.renderApp(); }" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${state.activeTab === 'settings' ? 'bg-emerald-500 text-slate-900 font-semibold shadow-lg shadow-emerald-500/10' : 'hover:bg-slate-800/60 hover:text-white'}">${getIconSVG('sync')} Cài đặt (Offline)</button>
-          </nav>
-        </aside>
-      `;
-
-      let headerButtonsHTML = '';
-      if (state.activeTab === 'customers') headerButtonsHTML = `<button onclick="window.openCustomerModal && window.openCustomerModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all">${getIconSVG('plus', 'w-4 h-4')} Thêm Khách Hàng</button>`;
-      else if (state.activeTab === 'capital_sources') headerButtonsHTML = `<button onclick="window.openCapitalSourceModal && window.openCapitalSourceModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all">${getIconSVG('plus', 'w-4 h-4')} Thêm Nguồn Vốn</button>`;
-      else if (state.activeTab === 'contracts') headerButtonsHTML = `<button onclick="window.openContractModal && window.openContractModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all">${getIconSVG('plus', 'w-4 h-4')} Tạo Hợp Đồng</button>`;
-
-      // Build context-aware search input + customer column filter (for Hợp đồng tab "Khách Hàng" column)
-      let searchAndFilterHTML = '';
-      const searchBaseCls = "px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 w-44 md:w-52";
-      if (state.activeTab === 'customers') {
-        searchAndFilterHTML = `<input type="text" placeholder="Tìm khách hàng (sửa lỗi nhập tiếng Việt)..." value="${state.customerSearchTerm || ''}" oninput="if(window.state){ window.state.customerSearchTerm = this.value; if(window.updateCustomersTable) window.updateCustomersTable(); }" class="${searchBaseCls}" />`;
-      } else if (state.activeTab === 'contracts') {
-        // Note: customer filter for "Khách Hàng" column is placed directly inside the table <th> (see contracts render block)
-        searchAndFilterHTML = `<input type="text" placeholder="Tìm kiếm nhanh (HĐ + KH)..." value="${state.searchTerm}" oninput="if(window.state) window.state.searchTerm = this.value; if(window.renderApp) window.renderApp();" class="${searchBaseCls}" />`;
-      } else {
-        searchAndFilterHTML = `<input type="text" placeholder="Tìm kiếm nhanh..." value="${state.searchTerm}" oninput="if(window.state) window.state.searchTerm = this.value; if(window.renderApp) window.renderApp();" class="${searchBaseCls}" />`;
-      }
-
-      const mobileTopBar = `
-        <div class="lg:hidden -mx-4 -mt-4 mb-3 px-4 py-2 bg-slate-900 text-white flex items-center justify-between text-xs">
-          <div class="font-semibold flex items-center gap-1.5">
-            <span class="text-emerald-400">●</span> VAY TIÊU DÙNG <span class="text-emerald-400/70 ml-1 text-[10px]">(Offline)</span>
-          </div>
-        </div>
-      `;
-      const headerHTML = `
-        ${mobileTopBar}
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-          <div><h2 class="text-2xl font-bold tracking-tight text-slate-900">Hệ Thống Quản Lý VIP</h2><p class="text-slate-500 text-sm">Bản chuẩn Offline • Dữ liệu gốc từ Excel (23 KH, 20 HĐ, 4 NV)</p></div>
-          <div class="flex flex-wrap items-center gap-2">
-            ${searchAndFilterHTML}
-            ${headerButtonsHTML}
-            <button onclick="window.openQuickPosModal && window.openQuickPosModal()" class="bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs sm:text-sm px-3 py-2 rounded-xl flex items-center gap-1 shadow-sm transition-all">⚡ POS Thu Nhanh</button>
-            <button onclick="window.openExportExcelModal && window.openExportExcelModal('${state.activeTab}')" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all font-semibold">📊 Export Excel</button>
-            <button onclick="window.openPaymentModal && window.openPaymentModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all">${getIconSVG('dollar', 'w-4 h-4')} Đóng Lãi / Tất Toán</button>
-            <button onclick="window.toggleTheme && window.toggleTheme()" class="bg-slate-800 hover:bg-slate-700 text-amber-400 font-extrabold text-sm px-3 py-2 rounded-xl flex items-center gap-1 shadow-sm transition-all" title="Chuyển chế độ Đêm/Sáng">${state.theme === 'dark' ? '☀️ Sáng' : '🌙 Đêm'}</button>
-          </div>
-        </div>
-      `;
-
+      let sidebarHTML = "";
+      let headerHTML = "";
       let mainContentHTML = '';
 
       if (state.activeTab === 'dashboard') {
@@ -3422,10 +3363,10 @@ const DEFAULT_CAPITAL_SOURCES = [
             const firstDow = new Date(calYear, calMonth, 1).getDay();
             const leadingEmpty = (firstDow + 6) % 7;
 
-            const dayHeaders = ['Thứ hai','Thứ ba','Thứ tư','Thứ năm','Thứ sáu','Thứ bảy','Chủ nhật'];
-            let grid = dayHeaders.map(h => `<div class="text-center font-bold bg-slate-100 text-xs p-1 border">${h}</div>`).join('');
+            const dayHeaders = ['T2','T3','T4','T5','T6','T7','CN'];
+            let grid = dayHeaders.map(h => `<div class="text-center font-bold bg-slate-100 text-[10px] py-1 border-r border-b border-slate-200">${h}</div>`).join('');
 
-            for (let i=0; i<leadingEmpty; i++) grid += `<div class="p-0.5 bg-slate-50 border"></div>`;
+            for (let i=0; i<leadingEmpty; i++) grid += `<div class="bg-slate-50 border-r border-b border-slate-200"></div>`;
 
             const fmtShort = (n) => {
               n = Number(n)||0;
@@ -3442,42 +3383,36 @@ const DEFAULT_CAPITAL_SOURCES = [
               const dow = cellD.getDay();
               const weekend = dow===0 || dow===6;
               const has = info.count > 0;
-              const bg = has ? 'bg-amber-50' : (weekend ? 'bg-red-50/40' : 'bg-white');
-              const txt = weekend && !has ? 'text-rose-600' : (has ? '' : 'text-slate-300');
-              let inner = `<div class="text-lg font-extrabold leading-none">${d}</div>`;
+              const bg = has ? 'bg-amber-50' : (weekend ? 'bg-rose-50/30' : 'bg-white');
+              const txt = weekend && !has ? 'text-rose-600' : (has ? 'text-slate-900' : 'text-slate-350');
+              
+              let inner = `<div class="text-[11px] font-black">${d}</div>`;
               if (has) {
-                inner += `<div class="text-sm leading-tight mt-1 font-bold">
-                  <div>${info.count} HĐ</div>
-                  <div>${fmtShort(info.totalVay)}</div>
-                  <div class="text-emerald-800">${fmtShort(info.totalLai)}</div>
+                inner += `<div class="text-[8px] leading-tight font-extrabold mt-0.5">
+                  <div class="text-amber-800">${info.count} HĐ</div>
+                  <div class="text-slate-500">${fmtShort(info.totalVay)}</div>
+                  <div class="text-emerald-700 font-black">${fmtShort(info.totalLai)}</div>
                 </div>`;
               }
-              grid += `<div class="p-1 border text-center min-h-[60px] flex flex-col justify-center ${bg} ${txt}">${inner}</div>`;
+              grid += `<div class="p-0.5 border-r border-b border-slate-200 text-center min-h-[44px] flex flex-col justify-center ${bg} ${txt}">${inner}</div>`;
             }
 
-            const navBtns = `
-              ${prevM ? `<button onclick="if(window.state){window.state.dashboardDueCalendarMonth='${prevM}';if(window.renderApp)window.renderApp();}" class="px-4 py-2 bg-slate-200 hover:bg-emerald-200 active:bg-emerald-300 rounded text-sm font-extrabold shadow">◀ Tháng trước</button>` : '<span></span>'}
-              <span class="px-3 py-2 text-sm font-bold text-emerald-700">${selectedMonth}</span>
-              ${nextM ? `<button onclick="if(window.state){window.state.dashboardDueCalendarMonth='${nextM}';if(window.renderApp)window.renderApp();}" class="px-4 py-2 bg-slate-200 hover:bg-emerald-200 active:bg-emerald-300 rounded text-sm font-extrabold shadow">Tháng sau ▶</button>` : '<span></span>'}
-            `;
-            const smallMonthList = sortedMonths.map(m => {
-              const active = m === selectedMonth ? 'bg-emerald-600 text-white' : 'bg-slate-100';
-              const [yy,mm] = m.split('-');
-              return `<button onclick="if(window.state){window.state.dashboardDueCalendarMonth='${m}';if(window.renderApp)window.renderApp();}" class="px-1 py-0.5 text-[8px] rounded ${active}">${mm}/${yy}</button>`;
-            }).join(' ');
-
-            const monthTitle = `THÁNG ${calMonth+1} ${calYear}`;
             const calHTML = `
-              <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-3 mt-2">
-                <div class="bg-emerald-600 text-white text-center py-1.5 rounded-t font-extrabold text-xl tracking-wide mb-1">${monthTitle}</div>
-                <div class="flex items-center justify-between gap-2 mb-2">
-                  <div class="flex gap-2">${navBtns}</div>
-                  <div class="flex gap-1 text-[9px]">${smallMonthList}</div>
+              <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+                <div class="flex items-center justify-between gap-3 mb-2.5">
+                  <span class="font-bold text-slate-800 text-xs uppercase flex items-center gap-1.5">
+                    <span>📅</span> Lịch đáo hạn tháng
+                  </span>
+                  <div class="flex items-center gap-1">
+                    ${prevM ? `<button onclick="if(window.state){window.state.dashboardDueCalendarMonth='${prevM}';if(window.renderApp)window.renderApp();}" class="p-1 hover:bg-slate-100 rounded text-[10px] font-bold border shadow-xs transition">◀</button>` : ''}
+                    <span class="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-bold tracking-wider">${mStr}/${yStr}</span>
+                    ${nextM ? `<button onclick="if(window.state){window.state.dashboardDueCalendarMonth='${nextM}';if(window.renderApp)window.renderApp();}" class="p-1 hover:bg-slate-100 rounded text-[10px] font-bold border shadow-xs transition">▶</button>` : ''}
+                  </div>
                 </div>
-                <div class="grid grid-cols-7 gap-1 text-sm border bg-white" style="font-family: system-ui, sans-serif;">
+                <div class="grid grid-cols-7 border-l border-t border-slate-200 rounded-lg overflow-hidden bg-white">
                   ${grid}
                 </div>
-                <div class="text-sm text-slate-700 mt-2 font-semibold">Mỗi ô: <b>số HĐ</b> / <b>vốn</b> / <b>lãi</b>. Cuối tuần (T7, CN) nền đỏ nhạt. Dùng để cân đối ngày tiếp HĐ mới.</div>
+                <div class="text-[9px] text-slate-400 mt-2 font-medium">Mỗi ô: số HĐ / vốn / lãi. T7 & CN màu hồng.</div>
               </div>`;
             return calHTML;
         })();
@@ -3664,294 +3599,375 @@ const DEFAULT_CAPITAL_SOURCES = [
         }
 
         mainContentHTML = `
-          <!-- SECTION 1: TỔNG QUAN (OVERVIEW) - 3 CARD LỚN, NỔI BẬT NHẤT -->
-          <div class="mb-8">
-            <div class="flex items-baseline justify-between mb-4">
-              <h3 class="text-sm font-extrabold text-slate-700 tracking-wider flex items-center gap-2">
-                📊 TỔNG QUAN TÌNH HÌNH HỆ THỐNG
-              </h3>
-              <span class="text-[10px] uppercase tracking-[1px] text-slate-400 font-medium">Cập nhật realtime • Dữ liệu từ Excel gốc</span>
+          <!-- TỔNG QUAN XU HƯỚNG SỨC KHỎE HỆ THỐNG -->
+          <div class="mb-5 flex justify-between items-center">
+            <h3 class="text-xs font-black text-slate-700 tracking-wider">
+              TỔNG QUAN XU HƯỚNG SỨC KHỎE HỆ THỐNG
+            </h3>
+            <span class="text-[9px] uppercase tracking-wider text-slate-400 font-bold">Cập nhật realtime • Offline</span>
+          </div>
+
+          <!-- TẦNG 1: 6 THÈ KPI TINH GỌN CHUYÊN NGHIỆP -->
+          <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
+            <!-- Card 1: Tổng Vốn Đầu Vào -->
+            <div class="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+              <div>
+                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  ${getIconSVG('database', 'w-3.5 h-3.5 text-indigo-500')}
+                  <span>Tổng Vốn Đầu Vào</span>
+                </div>
+                <div class="mt-2 text-lg font-black text-slate-900 tracking-tight">${formatVND(statsObj.tongVonDauVao)}</div>
+              </div>
+              <div class="text-[10px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 font-medium">
+                Nguồn vốn hiện có
+              </div>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <!-- Card 1: Tổng Vốn Đi Vay -->
-              <div class="bg-white border border-slate-200 p-5 md:p-7 rounded-3xl shadow-sm hover:shadow-xl transition-all flex flex-col justify-between min-h-[120px] md:min-h-[140px]">
-                <div>
-                  <div class="flex items-center gap-2 text-indigo-600">
-                    ${getIconSVG('database', 'w-5 h-5')}
-                    <span class="text-xs font-extrabold uppercase tracking-widest">Tổng Vốn Đi Vay</span>
-                  </div>
-                  <div class="mt-3 text-3xl lg:text-[28px] font-black text-indigo-800 tracking-tighter">${formatVND(statsObj.tongVonDauVao)}</div>
+
+            <!-- Card 2: Dư Nợ Cho Vay -->
+            <div class="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+              <div>
+                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  ${getIconSVG('fileText', 'w-3.5 h-3.5 text-emerald-500')}
+                  <span>Dư Nợ Cho Vay</span>
                 </div>
-                <div class="text-xs font-medium text-slate-500 mt-2 pt-2 border-t">
-                  Dư nợ chờ thu: <span class="font-bold text-slate-700">${formatVND(statsObj.tongVonChoVay)}</span>
+                <div class="mt-2 text-lg font-black text-slate-900 tracking-tight">${formatVND(statsObj.tongVonChoVay)}</div>
+              </div>
+              <div class="text-[10px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 font-medium">
+                Gốc thực tế ngoài thị trường
+              </div>
+            </div>
+
+            <!-- Card 3: Lãi Dự Kiến / Tháng -->
+            <div class="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+              <div>
+                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  ${getIconSVG('trendingUp', 'w-3.5 h-3.5 text-indigo-500')}
+                  <span>Lãi Dự Kiến / Tháng</span>
+                </div>
+                <div class="mt-2 text-lg font-black text-slate-900 tracking-tight">${formatVND(laiThu1ThangHopDong)}</div>
+              </div>
+              <div class="text-[10px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 font-medium">
+                Dòng lãi dự thu 30 ngày
+              </div>
+            </div>
+
+            <!-- Card 4: Lãi Ròng / Ngày -->
+            <div class="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+              <div>
+                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  ${getIconSVG('trendingUp', 'w-3.5 h-3.5 text-cyan-500')}
+                  <span>Lãi Ròng / Ngày</span>
+                </div>
+                <div class="mt-2 text-lg font-black text-slate-900 tracking-tight">${formatVND(laiRong1Ngay)}</div>
+              </div>
+              <div class="text-[10px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 font-medium">
+                Hiệu suất ròng bình quân
+              </div>
+            </div>
+
+            <!-- Card 5: Lãi Thực Tế Đã Thu (Green bg) -->
+            <div class="bg-emerald-600 text-white border border-emerald-700 p-4 rounded-2xl shadow-sm hover:shadow-md transition flex flex-col justify-between">
+              <div>
+                <div class="text-[10px] font-bold text-emerald-100 uppercase tracking-wider flex items-center gap-1.5">
+                  ${getIconSVG('dollar', 'w-3.5 h-3.5 text-emerald-200')}
+                  <span>Lãi Thực Đã Thu</span>
+                </div>
+                <div class="mt-2 text-lg font-black tracking-tight text-white">${formatVND(tienLaiThuc)}</div>
+              </div>
+              <div class="text-[10px] text-emerald-100 mt-2 pt-1.5 border-t border-emerald-550 font-medium">
+                Tổng thu trừ chi phí nguồn
+              </div>
+            </div>
+
+            <!-- Card 6: Lãi Đến Hạn Cần Thu (Rose bg, Red border) -->
+            <div class="bg-rose-50 border border-rose-200 p-4 rounded-2xl shadow-sm hover:shadow-md transition flex flex-col justify-between">
+              <div class="flex justify-between items-start">
+                <div>
+                  <div class="text-[10px] font-bold text-rose-600 uppercase tracking-wider">
+                    Lãi Đến Hạn Cần Thu
+                  </div>
+                  <div class="mt-2 text-lg font-black text-rose-700 tracking-tight">${formatVND(statsObj.tongLaiConNo)}</div>
+                </div>
+                <span class="text-rose-600 text-sm mt-0.5">⚠️</span>
+              </div>
+              <div class="text-[10px] text-rose-500 mt-2 pt-1.5 border-t border-rose-100 font-medium">
+                Lãi quá hạn & cận hạn
+              </div>
+            </div>
+          </div>
+
+          <!-- TẦNG 2: CHI PHÍ LÃI NGUỒN VỐN HÀNG THÁNG & QUẢN LÝ ĐỐI TÁC GỌN VÀO 1 HÀNG -->
+          <div class="grid grid-cols-1 lg:grid-cols-6 gap-4 mb-6">
+            
+            <!-- Ô Chi phí lãi nguồn vốn (lg:col-span-1 - nhỏ như Tổng vốn đầu vào) -->
+            <div class="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm hover:shadow-md transition flex flex-col justify-between lg:col-span-1">
+              <div>
+                <div class="text-[10px] font-bold text-slate-505 uppercase tracking-wider flex items-center gap-1.5">
+                  ${getIconSVG('creditCard', 'w-3.5 h-3.5 text-rose-500')}
+                  <span>Chi Phí Lãi Nguồn</span>
+                </div>
+                <div class="mt-2 text-lg font-black text-rose-600 tracking-tight">${formatVND(chiPhiNguon1Thang)}</div>
+              </div>
+              <div class="text-[10px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 font-medium">
+                Phí trả nguồn / tháng
+              </div>
+            </div>
+
+            <!-- Ô Quản lý lãi đối tác (lg:col-span-5 - phần còn lại) -->
+            <div class="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row items-center justify-between gap-4 lg:col-span-5">
+              <div class="flex-1 w-full">
+                <div class="flex items-center justify-between border-b pb-2 mb-2">
+                  <span class="font-extrabold text-xs text-amber-700 uppercase flex items-center gap-1.5">
+                    <span>🤝</span> QUẢN LÝ LÃI ĐỐI TÁC (${statsObj.phanTramChiaLaiDoiTac ?? 50}%)
+                  </span>
+                  <span class="bg-amber-50 text-amber-700 font-bold px-2 py-0.5 rounded-lg text-[9px] border border-amber-100">Chia sẻ đối tác</span>
+                </div>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+                  <p class="text-[10px] text-slate-450 leading-relaxed font-semibold">
+                    Trích <strong>${statsObj.phanTramChiaLaiDoiTac ?? 50}% Lợi Nhuận Ròng</strong> cho đối tác đầu tư.
+                  </p>
+                  
+                  <!-- Progress bar cho % đã rút -->
+                  ${(() => {
+                    const pct = statsObj.laiDoiTac > 0 ? Math.min(100, Math.round((statsObj.soLaiDoiTacDaRut / statsObj.laiDoiTac) * 100)) : 0;
+                    return `
+                      <div>
+                        <div class="flex justify-between text-[9px] font-bold mb-1">
+                          <span class="text-slate-400 uppercase">Rút lãi progress (${pct}%)</span>
+                          <span class="text-slate-700">${formatVND(statsObj.soLaiDoiTacDaRut)} / ${formatVND(statsObj.laiDoiTac)}</span>
+                        </div>
+                        <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden border">
+                          <div class="h-1.5 bg-amber-500 rounded-full transition-all" style="width: ${pct}%"></div>
+                        </div>
+                      </div>
+                    `;
+                  })()}
                 </div>
               </div>
 
-              <!-- Card 2: Tiền Lãi Thực -->
-              <div class="bg-emerald-600 text-white border border-emerald-700 p-5 md:p-7 rounded-3xl shadow-sm hover:shadow-xl transition-all flex flex-col justify-between min-h-[120px] md:min-h-[140px]">
-                <div>
-                  <div class="flex items-center gap-2 text-emerald-100">
-                    ${getIconSVG('dollar', 'w-5 h-5')}
-                    <span class="text-xs font-extrabold uppercase tracking-widest">Tiền Lãi Thực</span>
-                  </div>
-                  <div class="mt-3 text-3xl lg:text-[28px] font-black tracking-tighter">${formatVND(tienLaiThuc)}</div>
+              <!-- Nút hành động của Đối tác (đặt bên phải) -->
+              <div class="flex flex-col justify-between items-end border-t md:border-t-0 md:border-l border-slate-100 pt-3 md:pt-0 md:pl-4 w-full md:w-auto h-full min-w-[150px]">
+                <div class="text-[10px] text-right font-semibold text-slate-500 w-full mb-2">
+                  Khả dụng: <span class="text-slate-950 font-extrabold text-sm">${formatVND(statsObj.soLaiDoiTacConLai)}</span>
                 </div>
-                <div class="text-xs font-medium text-emerald-100 mt-2 pt-2 border-t border-emerald-400/40">
-                  Lợi nhuận ròng = Tổng lãi thu - Chi phí nguồn vốn
-                </div>
-              </div>
-
-              <!-- Card 3: Lãi Còn Thực Tế -->
-              <div class="bg-white border border-amber-200 p-5 md:p-7 rounded-3xl shadow-sm hover:shadow-xl transition-all flex flex-col justify-between min-h-[120px] md:min-h-[140px]">
-                <div>
-                  <div class="flex items-center gap-2 text-amber-600">
-                    ${getIconSVG('alert', 'w-5 h-5')}
-                    <span class="text-xs font-extrabold uppercase tracking-widest">Lãi Còn Thực Tế</span>
-                  </div>
-                  <div class="mt-3 text-3xl lg:text-[28px] font-black text-amber-700 tracking-tighter">${formatVND(tongLaiConThucTe)}</div>
-                </div>
-                <div class="mt-2 pt-2 border-t border-amber-100 flex items-center justify-between">
-                  <span class="text-xs font-medium text-amber-600">Đã trừ Lãi ĐT (${formatVND(laiDoiTac)}) & Đã rút</span>
-                  <button onclick="window.openWithdrawInterestModal && window.openWithdrawInterestModal()" class="text-xs bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-1.5 rounded-2xl flex items-center gap-1 transition-colors">
-                    <span>💸</span> Rút ngay
+                <div class="flex flex-wrap gap-1.5 justify-end w-full">
+                  <button onclick="(() => { const src = state.capitalSources.find(s => s.MaNguon === 'GOP_VON' || s.MaNguon === 'TIEN_DOI_TAC' || (s.TenNguon || '').toLowerCase().includes('đối tác')) || state.capitalSources[0]; if (src) window.openCapitalSourceModal(src.MaNguon); })()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[9px] px-2.5 py-1.5 rounded-lg transition active:scale-95">
+                    Cấu hình
+                  </button>
+                  <button onclick="window.openPartnerWithdrawModal && window.openPartnerWithdrawModal('RutRaNgoai')" class="bg-slate-900 hover:bg-slate-850 text-white font-bold text-[9px] px-2.5 py-1.5 rounded-lg transition active:scale-95">
+                    Rút
+                  </button>
+                  <button onclick="window.openPartnerWithdrawModal && window.openPartnerWithdrawModal('NapVaoHeThong')" class="bg-slate-900 hover:bg-slate-850 text-white font-bold text-[9px] px-2.5 py-1.5 rounded-lg transition active:scale-95">
+                    Nạp
+                  </button>
+                  <button onclick="window.openPartnerHistoryModal && window.openPartnerHistoryModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-[9px] px-2.5 py-1.5 rounded-lg transition active:scale-95 border border-slate-200">
+                    Lịch sử
                   </button>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Quick Action Bar - giảm click, tăng tốc độ hành động thường xuyên -->
-          <div class="mb-6 flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
-            <span class="text-xs font-semibold text-slate-500 px-2">Hành động nhanh:</span>
-            <button onclick="window.openContractModal && window.openContractModal()" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl font-semibold flex items-center gap-1 transition active:scale-95">
-              ➕ Tạo hợp đồng mới
-            </button>
-            <button onclick="window.openPartnerWithdrawModal && window.openPartnerWithdrawModal('RutRaNgoai')" class="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-xl font-semibold flex items-center gap-1 transition active:scale-95">
-              💸 Rút lãi đối tác
-            </button>
-            <button onclick="window.openPaymentModal && window.openPaymentModal()" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl font-semibold flex items-center gap-1 transition active:scale-95">
-              💰 Đóng lãi / Tất toán
-            </button>
-            <button onclick="window.openExportExcelModal && window.openExportExcelModal('dashboard')" class="text-xs bg-slate-700 hover:bg-slate-800 text-white px-3 py-1.5 rounded-xl font-semibold flex items-center gap-1 transition active:scale-95">
-              📊 Export Excel
-            </button>
-          </div>
-
-          <!-- SECTION 2: DÒNG TIỀN & HIỆU SUẤT (CASHFLOW & PERFORMANCE) - 4 CARDS VỪA PHẢI -->
-          <div class="mb-8">
-            <h3 class="text-xs font-extrabold text-slate-500 uppercase tracking-[1px] mb-4 flex items-center gap-2">
-              ⚡ DÒNG TIỀN & HIỆU SUẤT VỐN
-            </h3>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <!-- Card 1: Lãi thu 1 tháng (HĐ) -->
-              <div class="bg-white border border-emerald-100 p-5 rounded-2xl shadow-sm hover:shadow-md transition-all flex items-start justify-between" title="Tổng số lãi khách hàng phải trả trong 30 ngày tiếp theo dựa trên dư nợ hiện tại của tất cả hợp đồng đang vay.">
-                <div>
-                  <p class="text-[10px] font-bold text-emerald-700 tracking-widest">LÃI THU 1 THÁNG (HĐ)</p>
-                  <div class="text-2xl font-extrabold text-emerald-800 mt-2 tracking-tight">${formatVND(laiThu1ThangHopDong)}</div>
-                  <p class="text-[10px] text-emerald-600/70 mt-1 leading-tight hidden sm:block">Tổng lãi 30 ngày trên dư nợ cho vay hiện tại</p>
-                </div>
-                <div class="bg-emerald-100 text-emerald-700 p-2 rounded-xl flex-shrink-0">${getIconSVG('dashboard','w-5 h-5')}</div>
-              </div>
-
-              <!-- Card 2: Chi phí nguồn 1 tháng -->
-              <div class="bg-white border border-rose-100 p-5 rounded-2xl shadow-sm hover:shadow-md transition-all flex items-start justify-between" title="Chi phí lãi phải trả cho các nguồn vốn (ngân hàng/đối tác) trong 30 ngày, tính trên vốn đang sử dụng cho vay.">
-                <div>
-                  <p class="text-[10px] font-bold text-rose-700 tracking-widest">CHI PHÍ NGUỒN 1 THÁNG</p>
-                  <div class="text-2xl font-extrabold text-rose-800 mt-2 tracking-tight">${formatVND(chiPhiNguon1Thang)}</div>
-                  <p class="text-[10px] text-rose-600/70 mt-1 leading-tight hidden sm:block">Chi phí lãi phải trả cho nguồn vốn / ngân hàng</p>
-                </div>
-                <div class="bg-rose-100 text-rose-700 p-2 rounded-xl flex-shrink-0">${getIconSVG('briefcase','w-5 h-5')}</div>
-              </div>
-
-              <!-- Card 3: Lãi ròng 1 ngày (trừ NH) -->
-              <div class="bg-white border border-cyan-100 p-5 rounded-2xl shadow-sm hover:shadow-md transition-all flex items-start justify-between" title="Lãi ròng hàng ngày sau khi trừ toàn bộ chi phí lãi từ các nguồn vốn. Đây là thu nhập thực tế trung bình mỗi ngày.">
-                <div>
-                  <p class="text-[10px] font-bold text-cyan-700 tracking-widest">LÃI RÒNG 1 NGÀY (TRỪ NH)</p>
-                  <div class="text-2xl font-extrabold text-cyan-800 mt-2 tracking-tight">${formatVND(laiRong1Ngay)}</div>
-                  <p class="text-[10px] text-cyan-600/70 mt-1 leading-tight hidden sm:block">Thu nhập ròng bình quân sau khi trừ chi phí nguồn</p>
-                </div>
-                <div class="bg-cyan-100 text-cyan-700 p-2 rounded-xl flex-shrink-0">${getIconSVG('trendingUp','w-5 h-5')}</div>
-              </div>
-
-              <!-- Card 4: Lãi đến hạn chưa nộp -->
-              <div class="bg-white border border-amber-100 p-5 rounded-2xl shadow-sm hover:shadow-md transition-all flex items-start justify-between" title="Tổng lãi còn nợ của những hợp đồng đã đến hạn hoặc quá hạn. Đây là số tiền cần thu gấp.">
-                <div>
-                  <p class="text-[10px] font-bold text-amber-700 tracking-widest">LÃI ĐẾN HẠN CHƯA NỘP</p>
-                  <div class="text-2xl font-extrabold text-amber-800 mt-2 tracking-tight">${formatVND(statsObj.tongLaiConNo)}</div>
-                  <p class="text-[10px] text-amber-600/70 mt-1 leading-tight hidden sm:block">Chỉ tính các HĐ đã đến hạn hoặc quá hạn</p>
-                </div>
-                <div class="bg-amber-100 text-amber-700 p-2 rounded-xl flex-shrink-0">${getIconSVG('alert','w-5 h-5')}</div>
-              </div>
+          <!-- THANH HÀNH ĐỘNG NHANH -->
+          <div class="mb-6 bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+            <h4 class="font-bold text-slate-700 text-xs uppercase mb-3 flex items-center gap-1">Hành động nhanh</h4>
+            <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              <button onclick="window.openContractModal && window.openContractModal()" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-sm">
+                ➕ Tạo hợp đồng mới
+              </button>
+              <button onclick="window.openPartnerWithdrawModal && window.openPartnerWithdrawModal('RutRaNgoai')" class="text-xs bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-sm">
+                💸 Rút lãi đối tác
+              </button>
+              <button onclick="window.openPaymentModal && window.openPaymentModal()" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-sm">
+                💰 Đóng lãi / Tất toán
+              </button>
+              <button onclick="window.openExportExcelModal && window.openExportExcelModal('dashboard')" class="text-xs bg-slate-700 hover:bg-slate-800 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-sm">
+                📊 Export Excel
+              </button>
+              <button onclick="if(window.state){ window.state.activeTab='payments'; if(window.renderApp) window.renderApp(); }" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 border border-slate-200 shadow-sm col-span-2 sm:col-span-1">
+                📜 Lịch sử giao dịch
+              </button>
             </div>
           </div>
 
-          <!-- SECTION 3: QUẢN LÝ LÃI ĐỐI TÁC - PANEL NHẸ NHÀNG HƠN, DỄ ĐỌC -->
-          <div class="bg-slate-100 border border-slate-200 rounded-2xl p-6 shadow-sm mb-8">
-            <div class="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-4">
-              <div class="flex-1">
-                <h4 class="font-extrabold text-base text-amber-700 flex items-center gap-2">
-                  🤝 QUẢN LÝ LÃI ĐỐI TÁC (${statsObj.phanTramChiaLaiDoiTac ?? 50}% Tiền Lãi Thực)
-                </h4>
-                <p class="text-xs text-slate-600 mt-1">Hệ thống trích <strong>${statsObj.phanTramChiaLaiDoiTac ?? 50}% Lợi Nhuận Ròng</strong> cho Đối tác.
-                  <span class="inline-block bg-amber-100 text-amber-900 font-bold px-2 py-0.5 rounded text-[11px] ml-1">
-                    Phạm vi: ${statsObj.phamViChiaLaiDoiTac === 'LoaiTru' && (statsObj.danhSachLoaiTruDoiTac || []).length > 0 ? `Đang loại trừ ${statsObj.danhSachLoaiTruDoiTac.length} HĐ (${statsObj.danhSachLoaiTruDoiTac.join(', ')})` : 'Tất cả hợp đồng'}
-                  </span>
-                </p>
-                <p class="text-[10px] text-slate-500 mt-0.5">Công thức: ${statsObj.phamViChiaLaiDoiTac === 'LoaiTru' && (statsObj.danhSachLoaiTruDoiTac || []).length > 0 ? `(Lãi Thu Các HĐ Chọn - Chi Phí Nguồn)` : `(Tổng Lãi Thu - Chi Phí Nguồn)`} × ${statsObj.phanTramChiaLaiDoiTac ?? 50}% = Lãi Đối Tác</p>
+          <!-- BỐ CỤC ĐA CỘT TRỰC QUAN -->
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            
+            <!-- CỘT TRÁI (6/12): LỊCH BIỂU & VẬN HÀNH -->
+            <div class="lg:col-span-6 space-y-6">
+              <!-- 1. Lịch đáo hạn dòng tiền tháng -->
+              ${calSection}
 
-                <!-- Progress bar cho % đã rút -->
+              <!-- 2. Nhân viên giữ tiền (Staff) -->
+              ${staffHTML}
+            </div>
+
+            <!-- CỘT PHẢI (6/12): KHU VỰC TRỰC QUAN BIỂU ĐỒ CHUYÊN NGHIỆP -->
+            <div class="lg:col-span-6 space-y-6">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+                  <h4 class="font-extrabold text-slate-800 text-xs uppercase mb-3 flex items-center gap-1.5">
+                    <span>📊</span> Cơ Cấu Dư Nợ Theo Nguồn Vốn
+                  </h4>
+                  <div class="h-44 relative">
+                    <canvas id="chart-capital-allocation"></canvas>
+                  </div>
+                </div>
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+                  <h4 class="font-extrabold text-slate-800 text-xs uppercase mb-3 flex items-center gap-1.5">
+                    <span>📈</span> Doanh Thu Lãi Đã Thu Theo Tháng
+                  </h4>
+                  <div class="h-44 relative">
+                    <canvas id="chart-monthly-revenue"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- TẦNG 3: VẬN HÀNH HÀNG NGÀY & TRA CỨU SỐ LIỆU -->
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6">
+            
+            <!-- 1. HĐ cần xử lý (Action Required) thay thế vào vị trí Đối tác cũ -->
+            <div class="lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between border-b pb-3 mb-4">
+                  <h4 class="font-extrabold text-slate-900 text-xs uppercase flex items-center gap-1.5">
+                    <span>⚡</span> HĐ CẦN XỬ LÝ (Action Required)
+                  </h4>
+                  <span class="bg-rose-50 text-rose-700 font-bold px-2 py-0.5 rounded-full text-[10px] border border-rose-100">${countOverdue + countDue + countActive} Tổng</span>
+                </div>
+
+                <!-- Tabs & Search bar -->
+                <div class="flex flex-col gap-3 mb-4">
+                  <!-- Search inside Action Required -->
+                  <div class="relative w-full">
+                    <input type="text" value="${state.actionSearchTerm || ''}" oninput="window.setActionSearchTerm && window.setActionSearchTerm(this.value)" placeholder="Tìm kiếm nhanh..." class="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 w-full bg-slate-50 font-medium" />
+                    <span class="absolute left-2.5 top-2 text-slate-400">${getIconSVG('info','w-3.5 h-3.5')}</span>
+                  </div>
+
+                  <!-- Sub-tabs switcher buttons -->
+                  <div class="flex bg-slate-100 p-0.5 rounded-xl text-xs font-bold w-full">
+                    <button onclick="window.setActionRequiredTab && window.setActionRequiredTab('overdue')" class="flex-1 px-1.5 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1 ${activeTabAction === 'overdue' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}">
+                      <span>🔴 Quá hạn</span>
+                      <span class="px-1 py-0.2 rounded-full text-[9px] ${activeTabAction === 'overdue' ? 'bg-rose-700 text-white' : 'bg-rose-100 text-rose-800'}">${countOverdue}</span>
+                    </button>
+
+                    <button onclick="window.setActionRequiredTab && window.setActionRequiredTab('due')" class="flex-1 px-1.5 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1 ${activeTabAction === 'due' ? 'bg-amber-500 text-slate-950 shadow-sm' : 'text-slate-600 hover:text-slate-900'}">
+                      <span>🟠 Trả lãi</span>
+                      <span class="px-1 py-0.2 rounded-full text-[9px] ${activeTabAction === 'due' ? 'bg-amber-600 text-slate-950' : 'bg-amber-100 text-amber-900'}">${countDue}</span>
+                    </button>
+
+                    <button onclick="window.setActionRequiredTab && window.setActionRequiredTab('active')" class="flex-1 px-1.5 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1 ${activeTabAction === 'active' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}">
+                      <span>🟢 Chi tiết</span>
+                      <span class="px-1 py-0.2 rounded-full text-[9px] ${activeTabAction === 'active' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'}">${countActive}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Action Cards horizontal scrolling container -->
+                <div class="flex overflow-x-auto gap-4 pb-2 snap-x scrollbar-thin">
+                  ${actionCardsHTML}
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. Sub-Tabs tra cứu số liệu (col-span-7) -->
+            <div class="lg:col-span-7 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between border-b pb-3 mb-4">
+                  <h4 class="font-extrabold text-slate-800 text-xs uppercase flex items-center gap-1.5">
+                    <span>📋</span> Tra Cứu Số Liệu
+                  </h4>
+                  <span class="bg-indigo-50 text-indigo-700 font-bold px-2.5 py-0.5 rounded-full text-[10px] tracking-wider">Sub-tabs</span>
+                </div>
+
+                <!-- Tabs labels with active underline style -->
                 ${(() => {
-                  const pct = statsObj.laiDoiTac > 0 ? Math.min(100, Math.round((statsObj.soLaiDoiTacDaRut / statsObj.laiDoiTac) * 100)) : 0;
+                  const subTab = state.dashboardSubTab || 'capital';
+                  
+                  // Calculate monthly expected interest
+                  const monthly = {};
+                  state.payments.forEach(p => {
+                    if (p.LoaiThanhToan === 'Trả lãi' && (p.TrangThaiThu === 'DaNop' || !p.TrangThaiThu)) {
+                      const key = (p.NgayThanhToan || '').substring(0,7);
+                      if (key) monthly[key] = (monthly[key] || 0) + Number(p.SoTienTra || 0);
+                    }
+                  });
+                  const monKeys = Object.keys(monthly).sort().reverse().slice(0,12);
+
+                  let subTabContent = '';
+                  if (subTab === 'capital') {
+                    subTabContent = `<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">${sourcesHTML}</div>`;
+                  } else if (subTab === 'monthly') {
+                    if (monKeys.length) {
+                      subTabContent = `<div class="grid grid-cols-2 md:grid-cols-4 gap-3">` +
+                        monKeys.map(k => `
+                          <div class="p-3 bg-emerald-50/60 border border-emerald-100 rounded-xl">
+                            <div class="text-[9px] font-bold text-emerald-600 uppercase">Tháng ${k.split('-')[1]}/${k.split('-')[0]}</div>
+                            <div class="text-base font-extrabold text-emerald-800 mt-1">${formatVND(monthly[k])}</div>
+                          </div>
+                        `).join('') +
+                        `</div>`;
+                    } else {
+                      subTabContent = `<div class="text-slate-400 text-xs text-center py-6">Chưa có lịch sử thu lãi tháng nào.</div>`;
+                    }
+                  } else if (subTab === 'recent') {
+                    subTabContent = `
+                      <div class="overflow-x-auto">
+                        <table class="w-full text-xs text-left border-collapse">
+                          <thead>
+                            <tr class="text-slate-400 text-[10px] uppercase font-bold border-b pb-2">
+                              <th class="pb-2">Mã HĐ</th>
+                              <th class="pb-2">Khách hàng</th>
+                              <th class="pb-2">Ngày đóng</th>
+                              <th class="pb-2 text-right">Số tiền</th>
+                            </tr>
+                          </thead>
+                          <tbody class="divide-y divide-slate-100 font-medium">
+                            ${recentsHTML || `<tr><td colspan="4" class="text-center py-6 text-slate-400">Không có giao dịch gần đây.</td></tr>`}
+                          </tbody>
+                        </table>
+                      </div>
+                    `;
+                  }
+
                   return `
-                    <div class="mt-3">
-                      <div class="flex justify-between text-[10px] mb-1">
-                        <span class="text-slate-500">Đã rút: ${pct}%</span>
-                        <span class="font-medium text-slate-700">${formatVND(statsObj.soLaiDoiTacDaRut)} / ${formatVND(statsObj.laiDoiTac)}</span>
-                      </div>
-                      <div class="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                        <div class="h-2 bg-amber-500 rounded-full transition-all" style="width: ${pct}%"></div>
-                      </div>
+                    <div class="flex gap-4 border-b border-slate-150 pb-2 mb-4 text-xs font-bold">
+                      <button onclick="if(window.state){ window.state.dashboardSubTab = 'capital'; if(window.renderApp) window.renderApp(); }" 
+                              class="pb-2 transition-all ${subTab === 'capital' ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-400 hover:text-slate-700'}">
+                        Chi tiết dòng vốn
+                      </button>
+                      <button onclick="if(window.state){ window.state.dashboardSubTab = 'monthly'; if(window.renderApp) window.renderApp(); }" 
+                              class="pb-2 transition-all ${subTab === 'monthly' ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-400 hover:text-slate-700'}">
+                        Trả lãi theo tháng
+                      </button>
+                      <button onclick="if(window.state){ window.state.dashboardSubTab = 'recent'; if(window.renderApp) window.renderApp(); }" 
+                              class="pb-2 transition-all ${subTab === 'recent' ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-400 hover:text-slate-700'}">
+                        Nhật ký 5 GD
+                      </button>
+                    </div>
+                    
+                    <div class="min-h-[140px] flex flex-col justify-center">
+                      ${subTabContent}
                     </div>
                   `;
                 })()}
               </div>
-
-              <div class="flex flex-wrap items-center gap-2 md:mt-1">
-                <button onclick="(() => { const src = state.capitalSources.find(s => s.MaNguon === 'GOP_VON' || s.MaNguon === 'TIEN_DOI_TAC' || (s.TenNguon || '').toLowerCase().includes('đối tác')) || state.capitalSources[0]; if (src) window.openCapitalSourceModal(src.MaNguon); })()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3 py-2 rounded-xl shadow-sm transition flex items-center gap-1.5 active:scale-95">
-                  ⚙️ Cấu hình chia lãi
-                </button>
-                <button onclick="window.openPartnerWithdrawModal && window.openPartnerWithdrawModal('RutRaNgoai')" class="bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs px-3 py-2 rounded-xl shadow-sm transition flex items-center gap-1.5 active:scale-95">
-                  💸 Rút ra ngoài
-                </button>
-                <button onclick="window.openPartnerWithdrawModal && window.openPartnerWithdrawModal('NapVaoHeThong')" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-3 py-2 rounded-xl shadow-sm transition flex items-center gap-1.5 active:scale-95">
-                  🏦 Nạp vào hệ thống
-                </button>
-                <button onclick="window.openPartnerHistoryModal && window.openPartnerHistoryModal()" class="bg-slate-700 hover:bg-slate-800 text-white font-semibold text-xs px-3 py-2 rounded-xl shadow-sm transition flex items-center gap-1.5 active:scale-95">
-                  📜 Lịch sử
-                </button>
-              </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div class="bg-white border border-amber-200 p-3.5 rounded-xl">
-                <div class="text-[10px] font-semibold text-amber-700">Lãi Đối Tác (${statsObj.phanTramChiaLaiDoiTac ?? 50}%)</div>
-                <div class="text-2xl font-extrabold text-amber-700 mt-0.5">${formatVND(statsObj.laiDoiTac)}</div>
-                <div class="text-[10px] text-amber-600">Trích ${statsObj.phanTramChiaLaiDoiTac ?? 50}% từ Lợi Nhuận Ròng</div>
-              </div>
-              <div class="bg-white border border-slate-200 p-3.5 rounded-xl">
-                <div class="text-[10px] font-semibold text-slate-500">Số Lãi ĐT Đã Rút</div>
-                <div class="text-2xl font-extrabold text-slate-700 mt-0.5">${formatVND(statsObj.soLaiDoiTacDaRut)}</div>
-                <div class="text-[10px] text-slate-500">Tổng đã rút / chuyển</div>
-              </div>
-              <div class="bg-white border border-emerald-200 p-3.5 rounded-xl">
-                <div class="text-[10px] font-semibold text-emerald-700">Số Lãi Còn Lại Của Đối Tác</div>
-                <div class="text-2xl font-extrabold text-emerald-700 mt-0.5">${formatVND(statsObj.soLaiDoiTacConLai)}</div>
-                <div class="text-[10px] text-emerald-600">Số dư khả dụng</div>
-              </div>
-            </div>
           </div>
 
-          <!-- SECTION 4: HỢP ĐỒNG CẦN XỬ LÝ (ACTION REQUIRED) - TABS TƯƠNG TÁC + FILTER -->
-          <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-6">
-            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5 border-b pb-4">
-              <div>
-                <h4 class="font-extrabold text-slate-900 text-base flex items-center gap-2">
-                  <span>⚡ HỢP ĐỒNG CẦN XỬ LÝ (Action Required)</span>
-                </h4>
-                <p class="text-xs text-slate-500 mt-0.5">Theo dõi và xử lý các khoản vay theo mức độ ưu tiên hạn đóng lãi</p>
-              </div>
-
-              <div class="flex flex-wrap items-center gap-3">
-                <!-- Quick Search in Action Required -->
-                <div class="relative">
-                  <input type="text" value="${state.actionSearchTerm || ''}" oninput="window.setActionSearchTerm && window.setActionSearchTerm(this.value)" placeholder="Tìm Mã HĐ, tên khách..." class="pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 w-52 bg-slate-50" />
-                  <span class="absolute left-2.5 top-2.5 text-slate-400">${getIconSVG('info','w-3.5 h-3.5')}</span>
-                </div>
-
-                <!-- Tabs switcher -->
-                <div class="flex flex-wrap bg-slate-100 p-1 rounded-xl text-xs font-bold">
-                  <button onclick="window.setActionRequiredTab && window.setActionRequiredTab('overdue')" class="px-3.5 py-2 rounded-lg transition-all flex items-center gap-1.5 ${activeTabAction === 'overdue' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}">
-                    <span>🔴 Quá hạn</span>
-                    <span class="px-1.5 py-0.2 rounded-full text-[10px] ${activeTabAction === 'overdue' ? 'bg-rose-700 text-white' : 'bg-rose-100 text-rose-800'}">${countOverdue}</span>
-                  </button>
-
-                  <button onclick="window.setActionRequiredTab && window.setActionRequiredTab('due')" class="px-3.5 py-2 rounded-lg transition-all flex items-center gap-1.5 ${activeTabAction === 'due' ? 'bg-amber-500 text-slate-950 shadow-sm' : 'text-slate-600 hover:text-slate-900'}">
-                    <span>🟠 Đến hạn 3 ngày</span>
-                    <span class="px-1.5 py-0.2 rounded-full text-[10px] ${activeTabAction === 'due' ? 'bg-amber-600 text-slate-950' : 'bg-amber-100 text-amber-900'}">${countDue}</span>
-                  </button>
-
-                  <button onclick="window.setActionRequiredTab && window.setActionRequiredTab('active')" class="px-3.5 py-2 rounded-lg transition-all flex items-center gap-1.5 ${activeTabAction === 'active' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}">
-                    <span>🟢 Còn hạn</span>
-                    <span class="px-1.5 py-0.2 rounded-full text-[10px] ${activeTabAction === 'active' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'}">${countActive}</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Action Required - Mobile friendly Card List -->
-            <div class="space-y-1">
-              ${actionCardsHTML}
-            </div>
-          </div>
-
-          <!-- Calendar: large, prominent, early in dashboard for due date overview and planning new contracts -->
-          ${calSection}
-
-          <!-- VISUAL CHARTS SECTION (Chart.js) -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-              <h4 class="font-bold text-slate-800 text-sm uppercase mb-3 flex items-center justify-between">
-                <span>📊 Cơ Cấu Dư Nợ Theo Nguồn Vốn</span>
-              </h4>
-              <div class="h-64 relative">
-                <canvas id="chart-capital-allocation"></canvas>
-              </div>
-            </div>
-            <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-              <h4 class="font-bold text-slate-800 text-sm uppercase mb-3 flex items-center justify-between">
-                <span>📈 Doanh Thu Lãi Đã Thu Theo Tháng</span>
-              </h4>
-              <div class="h-64 relative">
-                <canvas id="chart-monthly-revenue"></canvas>
-              </div>
-            </div>
-          </div>
-
-          <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-6"><h4 class="font-bold text-slate-800 text-sm uppercase mb-4">Dòng vốn đầu vào & Trích tách chi phí</h4><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">${sourcesHTML}</div></div>
-
-          ${staffHTML}
-
-          <!-- Khoản trả lãi theo tháng (gần đây - actual received) -->
-          ${(() => {
-            const monthly = {};
-            state.payments.forEach(p => {
-              if (p.LoaiThanhToan === 'Trả lãi' && (p.TrangThaiThu === 'DaNop' || !p.TrangThaiThu)) {
-                const key = (p.NgayThanhToan || '').substring(0,7);
-                if (key) monthly[key] = (monthly[key] || 0) + Number(p.SoTienTra || 0);
-              }
-            });
-            const monKeys = Object.keys(monthly).sort().reverse().slice(0,4);
-            let monHTML = '';
-            if (monKeys.length) {
-              monHTML = `<div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-6"><h4 class="font-bold text-slate-800 text-sm uppercase mb-3">Khoản trả lãi theo tháng (gần đây)</h4><div class="grid grid-cols-2 md:grid-cols-4 gap-3">` +
-                monKeys.map(k => `<div class="p-3 bg-emerald-50 rounded-xl"><div class="text-xs text-emerald-600">${k}</div><div class="text-lg font-bold text-emerald-700">${formatVND(monthly[k])}</div></div>`).join('') +
-                `</div></div>`;
-            }
-            return monHTML;
-          })()}
-
-          <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6"><h4 class="font-bold text-slate-800 text-sm uppercase mb-4">Giao dịch thu tiền gần đây</h4><table class="w-full text-sm text-left"><tbody>${recentsHTML}</tbody></table></div>
-
-          
-
-          <!-- Floating Action Button (FAB) for mobile - quick access to common actions -->
+          <!-- Floating Action Button for mobile -->
           <div class="lg:hidden fixed bottom-4 right-4 z-[60]">
             <button onclick="window.openContractModal && window.openContractModal()" 
                     class="w-14 h-14 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-full shadow-2xl flex items-center justify-center text-4xl font-light active:scale-95 transition-all touch-manipulation">
               +
             </button>
           </div>
-        `;
+        `
       } 
       else if (state.activeTab === 'customers') {
         const term = state.customerSearchTerm || state.searchTerm || '';
@@ -4131,13 +4147,14 @@ const DEFAULT_CAPITAL_SOURCES = [
               <td class="p-2 text-indigo-700 text-xs font-extrabold bg-indigo-50/40">${formatDate(calc.ngayVaySauDaoStr)}</td>
               <td class="p-2 text-xs font-bold">${formatDate(contract.NgayDaoHan)}${warningTag}</td>
               <td class="p-2 text-right font-extrabold text-slate-900 text-xs">${formatVND(calc.duNoGocHienTai)}</td>
+              <td class="p-2 text-right text-xs font-semibold text-slate-750">${contract.LoaiHopDong === 'LaiCoDinhNgay' ? `<span class="text-slate-400 font-normal">Cố định: ${formatVND(contract.SoLaiCoDinh || 0)}</span>` : `${formatVND(contract.LaiNgayTrenTrieu || 0)} đ`}</td>
               <td class="p-2">${timeline}</td>
               <td class="p-2 text-right font-bold text-emerald-700 text-xs">${formatVND(calc.laiThangChuan30Ngay)}${extraTag}</td>
               <td class="p-2 text-right font-extrabold text-rose-600 text-xs">${formatVND(calc.laiConNo)}</td>
               <td class="p-2 text-center"><button onclick="window.openPaymentModal && window.openPaymentModal('${contract.MaHopDong}')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold">Thu</button><button onclick="window.openContractModal && window.openContractModal('${contract.MaHopDong}')" class="text-indigo-600 hover:text-indigo-800 font-semibold ml-1 text-xs">Sửa</button><button onclick="window.handleDeleteContract && window.handleDeleteContract('${contract.MaHopDong}')" class="text-rose-600 hover:text-rose-800 font-semibold ml-1 text-xs">Xóa</button></td>
             </tr>`;
         });
-        mainContentHTML = `<div class="bg-white rounded-2xl border border-slate-100 overflow-x-auto shadow-sm"><table class="w-full text-sm text-left"><thead><tr class="bg-slate-50 border-b text-slate-400 font-bold"><th class="p-2 uppercase text-xs">STT</th><th class="p-2 uppercase">Mã HĐ</th><th class="p-2 uppercase text-xs">Khách Hàng <span class="inline-block align-middle">${khFilterHTML}</span></th><th class="p-2 uppercase text-xs">Ngày vay</th><th class="p-2 uppercase text-xs">TT gần nhất</th><th class="p-2 uppercase text-xs text-indigo-700 bg-indigo-50/70 font-extrabold rounded-t">Ngày vay sau đáo</th><th class="p-2 uppercase text-xs">Đến hạn</th><th class="p-2 text-right uppercase">Số vay</th><th class="p-2 uppercase">Timeline nguồn vốn (tự chia)</th><th class="p-2 text-right uppercase text-xs">Lãi 1 tháng (30d)</th><th class="p-2 text-right uppercase">Lãi còn nợ</th><th class="p-2 text-center uppercase">Thao tác</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+        mainContentHTML = `<div class="bg-white rounded-2xl border border-slate-100 overflow-x-auto shadow-sm"><table class="w-full text-sm text-left"><thead><tr class="bg-slate-50 border-b text-slate-400 font-bold"><th class="p-2 uppercase text-xs">STT</th><th class="p-2 uppercase">Mã HĐ</th><th class="p-2 uppercase text-xs">Khách Hàng <span class="inline-block align-middle">${khFilterHTML}</span></th><th class="p-2 uppercase text-xs">Ngày vay</th><th class="p-2 uppercase text-xs">TT gần nhất</th><th class="p-2 uppercase text-xs text-indigo-700 bg-indigo-50/70 font-extrabold rounded-t">Ngày vay sau đáo</th><th class="p-2 uppercase text-xs">Đến hạn</th><th class="p-2 text-right uppercase">Số vay</th><th class="p-2 text-right uppercase text-xs">Lãi Ngày / 1 Triệu (VNĐ) *</th><th class="p-2 uppercase">Timeline nguồn vốn (tự chia)</th><th class="p-2 text-right uppercase text-xs">Lãi 1 tháng (30d)</th><th class="p-2 text-right uppercase">Lãi còn nợ</th><th class="p-2 text-center uppercase">Thao tác</th></tr></thead><tbody>${rows}</tbody></table></div>`;
       }
       else if (state.activeTab === 'payments') {
         let rows = '';
@@ -4207,7 +4224,137 @@ const DEFAULT_CAPITAL_SOURCES = [
           </div>`;
       }
 
-      let finalHTML = sidebarHTML + `<main class="flex-1 overflow-y-auto p-4 lg:p-8 w-full pb-20 lg:pb-0">` + warningHTML + headerHTML + mainContentHTML + `</main>`;
+      let finalHTML = `
+        <div class="flex flex-col h-screen w-full overflow-hidden bg-slate-100">
+          <!-- TOP HEADER BAR (Navy) -->
+          <header class="bg-slate-900 text-white min-h-[56px] py-2 md:py-0 flex flex-col md:flex-row items-center justify-between px-4 md:px-6 border-b border-slate-800 z-50 flex-shrink-0 gap-2">
+            <div class="flex items-center justify-between w-full md:w-auto">
+              <div class="flex items-center gap-2">
+                <div class="bg-emerald-500 p-1.5 rounded-lg text-slate-900">
+                  ${getIconSVG('dollar', 'w-4 h-4')}
+                </div>
+                <span class="font-black text-sm tracking-tight whitespace-nowrap">VAY TIÊU DÙNG | <span class="text-emerald-400">Quản Lý VIP V2</span></span>
+              </div>
+              <!-- Mobile toggle theme -->
+              <div class="flex items-center gap-2 md:hidden">
+                <button onclick="window.toggleTheme && window.toggleTheme()" class="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-amber-400 text-xs">
+                  ${state.theme === 'dark' ? '☀️' : '🌙'}
+                </button>
+              </div>
+            </div>
+            
+            <!-- Quick Search bar in center -->
+            <div class="relative flex items-center w-full md:w-auto">
+              <span class="absolute left-3 text-slate-400">
+                ${getIconSVG('info', 'w-3.5 h-3.5')}
+              </span>
+              <input type="text" 
+                     placeholder="${state.activeTab === 'customers' ? 'Tìm khách hàng...' : 'Tìm kiếm nhanh...'}" 
+                     value="${state.activeTab === 'customers' ? (state.customerSearchTerm || '') : (state.searchTerm || '')}" 
+                     oninput="if(window.state){ if(state.activeTab==='customers') { state.customerSearchTerm = this.value; if(window.updateCustomersTable) window.updateCustomersTable(); } else { state.searchTerm = this.value; } if(window.renderApp) window.renderApp(); }" 
+                     class="bg-slate-800/80 text-white text-xs pl-9 pr-4 py-1.5 border border-slate-700/60 rounded-full focus:outline-none focus:border-emerald-500 w-full md:w-60 transition-all" />
+            </div>
+
+            <!-- Right-side actions -->
+            <div class="flex items-center gap-3 w-full md:w-auto justify-end">
+              <!-- Month Selector Dropdown -->
+              ${(() => {
+                const mset = new Set();
+                state.contracts.forEach(c => {
+                  if (c.NgayDaoHan) mset.add(c.NgayDaoHan.substring(0, 7));
+                });
+                const sortedMonths = Array.from(mset).sort();
+                if (sortedMonths.length === 0) sortedMonths.push('2026-07');
+                
+                let selectedMonth = state.dashboardDueCalendarMonth || '2026-07';
+                if (!sortedMonths.includes(selectedMonth)) selectedMonth = sortedMonths[sortedMonths.length-1];
+                state.dashboardDueCalendarMonth = selectedMonth;
+
+                return `
+                  <div class="relative flex items-center">
+                    <select onchange="if(window.state){ window.state.dashboardDueCalendarMonth = this.value; if(window.renderApp) window.renderApp(); }"
+                            class="bg-slate-800/80 text-white text-xs pl-3 pr-8 py-1.5 border border-slate-700/60 rounded-full focus:outline-none focus:border-emerald-500 cursor-pointer appearance-none">
+                      ${sortedMonths.map(m => {
+                        const [y, mn] = m.split('-');
+                        const sel = m === selectedMonth ? 'selected' : '';
+                        return `<option value="${m}" ${sel}>Ngày ${mn}/${y}</option>`;
+                      }).join('')}
+                    </select>
+                    <span class="absolute right-3 top-2.5 pointer-events-none text-[9px] text-slate-400">▼</span>
+                  </div>
+                `;
+              })()}
+
+              <!-- Desktop Theme Toggle -->
+              <button onclick="window.toggleTheme && window.toggleTheme()" 
+                      class="hidden md:flex w-8 h-8 rounded-full bg-slate-800 items-center justify-center text-amber-400 hover:bg-slate-700 transition" 
+                      title="Chuyển chế độ Đêm/Sáng">
+                ${state.theme === 'dark' ? '☀️' : '🌙'}
+              </button>
+            </div>
+          </header>
+
+          <!-- LOWER CONTAINER (Sidebar + Content) -->
+          <div class="flex flex-1 overflow-hidden">
+            <!-- SLIM SIDEBAR (Thin Icon-Only Sidebar) -->
+            <aside class="bg-slate-900 text-slate-400 w-16 flex flex-col items-center py-6 border-r border-slate-800 hidden lg:flex flex-shrink-0 space-y-5">
+              ${(() => {
+                const tabs = [
+                  { id: 'dashboard', icon: 'dashboard', label: 'Tổng quan' },
+                  { id: 'customers', icon: 'users', label: 'Khách hàng', count: state.customers.length },
+                  { id: 'capital_sources', icon: 'database', label: 'Nguồn Vốn', count: state.capitalSources.length },
+                  { id: 'contracts', icon: 'fileText', label: 'Hợp đồng', count: state.contracts.filter(c=>c.TrangThai==='Đang vay').length },
+                  { id: 'payments', icon: 'creditCard', label: 'Nhật ký' },
+                  { id: 'settings', icon: 'sync', label: 'Cài đặt' }
+                ];
+
+                return tabs.map(t => {
+                  const active = state.activeTab === t.id;
+                  const activeCls = active ? 'bg-emerald-50 text-slate-900 shadow-lg shadow-emerald-550/20' : 'hover:bg-slate-800/60 hover:text-white';
+                  
+                  return `
+                    <button onclick="if(window.state){ window.state.contractCustomerFilter=''; window.state.activeTab='${t.id}'; if(window.renderApp) window.renderApp(); }" 
+                            class="w-10 h-10 rounded-xl flex flex-col items-center justify-center relative transition-all ${activeCls}"
+                            title="${t.label}">
+                      ${getIconSVG(t.icon, 'w-5.5 h-5.5')}
+                      ${t.count ? `<span class="absolute -top-1 -right-1 bg-rose-600 text-white text-[8px] font-extrabold px-1 rounded-full border border-slate-900">${t.count}</span>` : ''}
+                    </button>
+                  `;
+                }).join('');
+              })()}
+            </aside>
+
+            <!-- MAIN WORKSPACE -->
+            <main class="flex-1 overflow-y-auto p-4 lg:p-6 w-full pb-20 lg:pb-6 bg-slate-50 text-slate-800">
+              ${warningHTML}
+
+              <!-- PAGE HEADER FOR TABS OTHER THAN DASHBOARD -->
+              ${state.activeTab !== 'dashboard' ? `
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                  <div>
+                    <h2 class="text-2xl font-bold tracking-tight text-slate-900">${
+                      state.activeTab === 'customers' ? 'Quản lý Khách hàng' :
+                      state.activeTab === 'capital_sources' ? 'Quản lý Nguồn Vốn' :
+                      state.activeTab === 'contracts' ? 'Quản lý Hợp đồng' :
+                      state.activeTab === 'payments' ? 'Nhật ký giao dịch đóng tiền' : 'Cài đặt hệ thống'
+                    }</h2>
+                    <p class="text-slate-500 text-sm">Cập nhật realtime từ cơ sở dữ liệu offline</p>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    ${state.activeTab === 'customers' ? `<button onclick="window.openCustomerModal && window.openCustomerModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition">${getIconSVG('plus', 'w-4 h-4')} Thêm Khách Hàng</button>` : ''}
+                    ${state.activeTab === 'capital_sources' ? `<button onclick="window.openCapitalSourceModal && window.openCapitalSourceModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition">${getIconSVG('plus', 'w-4 h-4')} Thêm Nguồn Vốn</button>` : ''}
+                    ${state.activeTab === 'contracts' ? `<button onclick="window.openContractModal && window.openContractModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition">${getIconSVG('plus', 'w-4 h-4')} Tạo Hợp Đồng</button>` : ''}
+                    <button onclick="window.openQuickPosModal && window.openQuickPosModal()" class="bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs sm:text-sm px-3 py-2 rounded-xl flex items-center gap-1 shadow-sm transition">⚡ POS Thu Nhanh</button>
+                    <button onclick="window.openExportExcelModal && window.openExportExcelModal('${state.activeTab}')" class="bg-slate-700 hover:bg-slate-800 text-white font-semibold text-xs sm:text-sm px-3 py-2 rounded-xl flex items-center gap-1 shadow-sm transition">📊 Export Excel</button>
+                  </div>
+                </div>
+              ` : ''}
+
+              ${mainContentHTML}
+            </main>
+          </div>
+        </div>
+      `;
 
       // Mobile bottom navigation (iOS friendly)
       const mobileNavHTML = `
