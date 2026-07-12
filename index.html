@@ -12,6 +12,7 @@
   <!-- PWA Manifest & Google GIS Client & Chart.js -->
   <link rel="manifest" href="manifest.json">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   
   <!-- Service Worker Registration with Update Handling -->
@@ -1076,10 +1077,15 @@ const DEFAULT_CAPITAL_SOURCES = [
       recalculateAllDueDates();
       const cloudAt = Number(data.backupAt || Date.now());
       state.lastLocalChangeAt = cloudAt;
-      state.dataDirtySinceBackup = false;
       localStorage.setItem('loan_last_local_change', String(cloudAt));
       localStorage.setItem('loan_last_cloud_sync', String(cloudAt));
+      if (opts.provider === 'onedrive') {
+        localStorage.setItem('loan_last_onedrive_sync', String(cloudAt));
+      } else if (opts.provider === 'gdrive') {
+        localStorage.setItem('loan_last_gdrive_sync', String(cloudAt));
+      }
       saveStateOfflineAndRefresh(opts.render !== false, { skipDirtyMark: true });
+      if (typeof recomputeCloudDirty === 'function') recomputeCloudDirty();
     }
 
     function markLocalDataChanged() {
@@ -1092,12 +1098,16 @@ const DEFAULT_CAPITAL_SOURCES = [
     }
 
     function scheduleDebouncedAutoBackup() {
-      if (!isAutoGDriveSyncEnabled() || !state.gdriveToken || !state.isUnlocked || !state.password) return;
+      if (!state.isUnlocked || !state.password) return;
+      const anyCloud =
+        (isAutoGDriveSyncEnabled() && state.gdriveToken) ||
+        (typeof isAutoOneDriveSyncEnabled === 'function' && isAutoOneDriveSyncEnabled() && typeof isOneDriveConnected === 'function' && isOneDriveConnected());
+      if (!anyCloud) return;
       clearTimeout(_autoBackupTimer);
       // Sao lưu nền sau 20s khi có thay đổi (phòng kill app đột ngột)
       _autoBackupTimer = setTimeout(() => {
         if (state.dataDirtySinceBackup) {
-          backupToGoogleDrive({ silent: true }).catch(() => {});
+          autoBackupAllConnected({ silent: true }).catch(() => {});
         }
       }, 20000);
     }
@@ -1266,10 +1276,11 @@ const DEFAULT_CAPITAL_SOURCES = [
         });
         await checkGoogleDriveResponse(uploadRes, { silent });
 
-        state.dataDirtySinceBackup = false;
         state.lastLocalChangeAt = Math.max(Number(state.lastLocalChangeAt || 0), backupAt);
         localStorage.setItem('loan_last_local_change', String(state.lastLocalChangeAt));
-        localStorage.setItem('loan_last_cloud_sync', String(backupAt));
+        localStorage.setItem('loan_last_gdrive_sync', String(backupAt));
+        localStorage.setItem('loan_last_cloud_sync', String(Math.max(backupAt, Number(localStorage.getItem('loan_last_cloud_sync') || 0))));
+        if (typeof recomputeCloudDirty === 'function') recomputeCloudDirty();
         if (!silent) showNotification("Đã sao lưu lên Google Drive thành công!");
         else console.log('[GDrive] Auto backup OK @', new Date(backupAt).toISOString());
         return true;
@@ -1307,7 +1318,7 @@ const DEFAULT_CAPITAL_SOURCES = [
           const decrypted = decrypt(state.password, bundle.encrypted);
           const data = JSON.parse(decrypted);
           if (data.customers && data.contracts && data.payments) {
-            applyAppDataFromCloud(data, { render: true });
+            applyAppDataFromCloud(data, { render: true, provider: 'gdrive' });
             if (!silent) showNotification("Khôi phục dữ liệu từ Google Drive thành công!");
             return true;
           }
@@ -1329,64 +1340,118 @@ const DEFAULT_CAPITAL_SOURCES = [
       }
     }
 
-    /** Vào app / mở lại tab: kéo cloud nếu mới hơn, đẩy local nếu local mới hơn */
+    function recomputeCloudDirty() {
+      const localAt = Number(state.lastLocalChangeAt || localStorage.getItem('loan_last_local_change') || 0);
+      let dirty = false;
+      if (state.gdriveToken && isAutoGDriveSyncEnabled()) {
+        if (localAt > Number(localStorage.getItem('loan_last_gdrive_sync') || 0)) dirty = true;
+      }
+      if (typeof isOneDriveConnected === 'function' && isOneDriveConnected() && typeof isAutoOneDriveSyncEnabled === 'function' && isAutoOneDriveSyncEnabled()) {
+        if (localAt > Number(localStorage.getItem('loan_last_onedrive_sync') || 0)) dirty = true;
+      }
+      state.dataDirtySinceBackup = dirty;
+      return dirty;
+    }
+
+    async function autoBackupAllConnected(opts = {}) {
+      const jobs = [];
+      if (isAutoGDriveSyncEnabled() && state.gdriveToken) {
+        jobs.push(backupToGoogleDrive(opts).catch(err => console.warn('[GDrive] backup fail', err)));
+      }
+      if (typeof isAutoOneDriveSyncEnabled === 'function' && isAutoOneDriveSyncEnabled() && typeof isOneDriveConnected === 'function' && isOneDriveConnected()) {
+        jobs.push(backupToOneDrive(opts).catch(err => console.warn('[OneDrive] backup fail', err)));
+      }
+      if (!jobs.length) return;
+      await Promise.allSettled(jobs);
+      recomputeCloudDirty();
+    }
+
+    /** Vào app / mở lại tab: lấy bản cloud mới nhất (GDrive / OneDrive), đẩy local nếu local mới hơn */
     async function autoSyncOnAppEnter() {
-      if (!isAutoGDriveSyncEnabled()) return;
-      if (!state.isUnlocked || !state.password || !state.gdriveToken) return;
-      if (_gdriveSyncInProgress) return;
+      if (!state.isUnlocked || !state.password) return;
       if (Date.now() - _lastEnterSyncAt < 4000) return;
       _lastEnterSyncAt = Date.now();
 
-      try {
-        const bundle = await fetchCloudBackupBundle({ silent: true });
-        if (!bundle) {
-          // Chưa có file cloud → đẩy bản local lên
-          await backupToGoogleDrive({ silent: true });
-          return;
-        }
+      const localAt = Number(state.lastLocalChangeAt || localStorage.getItem('loan_last_local_change') || 0);
+      const candidates = [];
 
-        let cloudData = null;
+      // --- Google Drive ---
+      if (isAutoGDriveSyncEnabled() && state.gdriveToken) {
         try {
-          cloudData = JSON.parse(decrypt(state.password, bundle.encrypted));
-        } catch (e) {
-          console.warn('[GDrive] Auto sync: không giải mã được bản cloud (PIN khác?)');
-          return;
+          const bundle = await fetchCloudBackupBundle({ silent: true });
+          if (!bundle) {
+            candidates.push({ provider: 'gdrive', at: 0, missing: true });
+          } else {
+            try {
+              const data = JSON.parse(decrypt(state.password, bundle.encrypted));
+              if (data && data.contracts && data.customers) {
+                candidates.push({ provider: 'gdrive', at: Number(data.backupAt || 0), data });
+              }
+            } catch (e) {
+              console.warn('[GDrive] Auto sync: không giải mã được bản cloud (PIN khác?)');
+            }
+          }
+        } catch (err) {
+          console.warn('[GDrive] Auto sync on enter failed:', err && err.message);
         }
-        if (!cloudData || !cloudData.contracts || !cloudData.customers) return;
-
-        const cloudAt = Number(cloudData.backupAt || 0);
-        const localAt = Number(state.lastLocalChangeAt || localStorage.getItem('loan_last_local_change') || 0);
-        const lastSync = Number(localStorage.getItem('loan_last_cloud_sync') || 0);
-
-        if (cloudAt > localAt && cloudAt >= lastSync) {
-          applyAppDataFromCloud(cloudData, { render: true });
-          showNotification("☁️ Đã tự động đồng bộ dữ liệu mới từ Google Drive");
-        } else if (localAt > cloudAt || state.dataDirtySinceBackup) {
-          await backupToGoogleDrive({ silent: true });
-        } else {
-          localStorage.setItem('loan_last_cloud_sync', String(Math.max(cloudAt, lastSync, localAt)));
-        }
-      } catch (err) {
-        console.warn('[GDrive] Auto sync on enter failed:', err && err.message);
       }
+
+      // --- OneDrive ---
+      if (isAutoOneDriveSyncEnabled() && isOneDriveConnected()) {
+        try {
+          const bundle = await fetchOneDriveBackupBundle({ silent: true });
+          if (!bundle) {
+            candidates.push({ provider: 'onedrive', at: 0, missing: true });
+          } else {
+            try {
+              const data = JSON.parse(decrypt(state.password, bundle.encrypted));
+              if (data && data.contracts && data.customers) {
+                candidates.push({ provider: 'onedrive', at: Number(data.backupAt || 0), data });
+              }
+            } catch (e) {
+              console.warn('[OneDrive] Auto sync: không giải mã được bản cloud (PIN khác?)');
+            }
+          }
+        } catch (err) {
+          console.warn('[OneDrive] Auto sync on enter failed:', err && err.message);
+        }
+      }
+
+      if (!candidates.length) return;
+
+      const withData = candidates.filter(c => c.data);
+      const best = withData.slice().sort((a, b) => b.at - a.at)[0];
+
+      if (best && best.at > localAt) {
+        applyAppDataFromCloud(best.data, { render: true, provider: best.provider });
+        const label = best.provider === 'onedrive' ? 'OneDrive' : 'Google Drive';
+        showNotification(`☁️ Đã tự động đồng bộ dữ liệu mới từ ${label}`);
+        // Đẩy sang cloud còn lại nếu chúng cũ hơn
+        for (const c of candidates) {
+          if (c.provider === best.provider) continue;
+          if (c.provider === 'gdrive') await backupToGoogleDrive({ silent: true });
+          if (c.provider === 'onedrive') await backupToOneDrive({ silent: true });
+        }
+      } else if (state.dataDirtySinceBackup || candidates.some(c => c.missing || (c.data && localAt > c.at))) {
+        await autoBackupAllConnected({ silent: true });
+      } else if (best) {
+        localStorage.setItem('loan_last_cloud_sync', String(Math.max(best.at, localAt, Number(localStorage.getItem('loan_last_cloud_sync') || 0))));
+      }
+      recomputeCloudDirty();
     }
 
-    /** Thoát app / ẩn tab: sao lưu nếu còn thay đổi chưa đẩy lên cloud */
+    /** Thoát app / ẩn tab: sao lưu lên mọi cloud đang kết nối */
     async function autoBackupOnAppLeave() {
-      if (!isAutoGDriveSyncEnabled()) return;
-      if (!state.isUnlocked || !state.password || !state.gdriveToken) return;
-      if (!state.dataDirtySinceBackup && !state.lastLocalChangeAt) return;
+      if (!state.isUnlocked || !state.password) return;
       if (Date.now() - _lastLeaveBackupAt < 1500) return;
       _lastLeaveBackupAt = Date.now();
-
-      const localAt = Number(state.lastLocalChangeAt || 0);
-      const lastSync = Number(localStorage.getItem('loan_last_cloud_sync') || 0);
-      if (!state.dataDirtySinceBackup && localAt <= lastSync) return;
+      recomputeCloudDirty();
+      if (!state.dataDirtySinceBackup) return;
 
       try {
-        await backupToGoogleDrive({ silent: true, keepalive: true });
+        await autoBackupAllConnected({ silent: true, keepalive: true });
       } catch (err) {
-        console.warn('[GDrive] Auto backup on leave failed:', err && err.message);
+        console.warn('[Cloud] Auto backup on leave failed:', err && err.message);
       }
     }
 
@@ -1398,7 +1463,6 @@ const DEFAULT_CAPITAL_SOURCES = [
         if (document.visibilityState === 'hidden') {
           autoBackupOnAppLeave();
         } else if (document.visibilityState === 'visible') {
-          // Quay lại app / tab → đồng bộ lại
           setTimeout(() => autoSyncOnAppEnter(), 500);
         }
       });
@@ -1407,10 +1471,327 @@ const DEFAULT_CAPITAL_SOURCES = [
         autoBackupOnAppLeave();
       });
 
-      // Một số trình duyệt mobile chỉ bắn blur khi chuyển app
       window.addEventListener('blur', () => {
         if (document.visibilityState === 'hidden') autoBackupOnAppLeave();
       });
+    }
+
+    // === ONEDRIVE (Microsoft Graph + MSAL) ===
+    let msalInstance = null;
+    let _onedriveSyncInProgress = false;
+    const ONEDRIVE_SCOPES = ['Files.ReadWrite', 'User.Read', 'offline_access'];
+    const ONEDRIVE_BACKUP_PATH = 'QuanLyVonCV/QuanLyVayTien_Backup.enc.json';
+
+    function getOneDriveClientId() {
+      return (localStorage.getItem('loan_onedrive_client_id') || '').trim();
+    }
+
+    function getOneDriveRedirectUri() {
+      return window.location.href.split('#')[0].split('?')[0];
+    }
+
+    function isAutoOneDriveSyncEnabled() {
+      return localStorage.getItem('loan_onedrive_auto_sync') !== '0';
+    }
+    function setAutoOneDriveSync(enabled) {
+      localStorage.setItem('loan_onedrive_auto_sync', enabled ? '1' : '0');
+      showNotification(enabled
+        ? "Đã bật tự động đồng bộ OneDrive (vào app / thoát app)"
+        : "Đã tắt tự động đồng bộ OneDrive");
+      if (enabled && state.isUnlocked && isOneDriveConnected()) {
+        setTimeout(() => autoSyncOnAppEnter(), 300);
+      }
+      if (window.renderApp) window.renderApp();
+    }
+    window.setAutoOneDriveSync = setAutoOneDriveSync;
+
+    function isOneDriveConnected() {
+      if (state.onedriveConnected) return true;
+      try {
+        if (msalInstance) {
+          const accounts = msalInstance.getAllAccounts();
+          if (accounts && accounts.length) {
+            state.onedriveConnected = true;
+            state.onedriveAccount = accounts[0];
+            return true;
+          }
+        }
+      } catch (_) {}
+      return localStorage.getItem('loan_onedrive_connected') === '1';
+    }
+
+    async function ensureMsalReady() {
+      if (typeof msal === 'undefined' || !msal.PublicClientApplication) {
+        throw new Error("Thư viện Microsoft MSAL chưa tải xong. Thử lại sau vài giây.");
+      }
+      const clientId = getOneDriveClientId();
+      if (!clientId) {
+        throw new Error("Chưa nhập Azure Application (client) ID cho OneDrive. Vào Cài đặt dán Client ID trước.");
+      }
+      if (msalInstance && msalInstance.getConfiguration().auth.clientId === clientId) {
+        return msalInstance;
+      }
+      msalInstance = new msal.PublicClientApplication({
+        auth: {
+          clientId,
+          authority: 'https://login.microsoftonline.com/common',
+          redirectUri: getOneDriveRedirectUri(),
+          postLogoutRedirectUri: getOneDriveRedirectUri()
+        },
+        cache: {
+          cacheLocation: 'localStorage',
+          storeAuthStateInCookie: true
+        }
+      });
+      await msalInstance.initialize();
+      try {
+        const redirectResult = await msalInstance.handleRedirectPromise();
+        if (redirectResult && redirectResult.account) {
+          state.onedriveAccount = redirectResult.account;
+          state.onedriveConnected = true;
+          localStorage.setItem('loan_onedrive_connected', '1');
+          if (localStorage.getItem('loan_onedrive_auto_sync') === null) {
+            localStorage.setItem('loan_onedrive_auto_sync', '1');
+          }
+          if (state.isUnlocked && state.password) {
+            setTimeout(() => autoSyncOnAppEnter(), 500);
+          }
+        }
+      } catch (e) {
+        console.warn('[OneDrive] handleRedirectPromise:', e);
+      }
+      const accounts = msalInstance.getAllAccounts();
+      if (accounts && accounts.length) {
+        state.onedriveAccount = accounts[0];
+        state.onedriveConnected = true;
+        localStorage.setItem('loan_onedrive_connected', '1');
+      }
+      return msalInstance;
+    }
+
+    async function initOneDriveAuth() {
+      try {
+        if (!getOneDriveClientId()) return;
+        if (typeof msal === 'undefined') {
+          // MSAL script may still be loading
+          setTimeout(() => { initOneDriveAuth().catch(() => {}); }, 800);
+          return;
+        }
+        await ensureMsalReady();
+      } catch (e) {
+        console.warn('[OneDrive] init:', e && e.message);
+      }
+    }
+
+    async function getOneDriveAccessToken(interactive = false) {
+      await ensureMsalReady();
+      let account = state.onedriveAccount || (msalInstance.getAllAccounts()[0] || null);
+      const request = { scopes: ONEDRIVE_SCOPES, account };
+
+      if (!account) {
+        if (!interactive) return null;
+        try {
+          const login = await msalInstance.loginPopup({ scopes: ONEDRIVE_SCOPES });
+          account = login.account;
+          state.onedriveAccount = account;
+          state.onedriveConnected = true;
+          localStorage.setItem('loan_onedrive_connected', '1');
+          return login.accessToken;
+        } catch (popupErr) {
+          console.warn('[OneDrive] loginPopup failed, trying redirect', popupErr);
+          await msalInstance.loginRedirect({ scopes: ONEDRIVE_SCOPES });
+          return null;
+        }
+      }
+
+      try {
+        const silent = await msalInstance.acquireTokenSilent({ ...request, account });
+        return silent.accessToken;
+      } catch (silentErr) {
+        if (!interactive) return null;
+        try {
+          const popup = await msalInstance.acquireTokenPopup({ scopes: ONEDRIVE_SCOPES, account });
+          return popup.accessToken;
+        } catch (popupErr) {
+          await msalInstance.acquireTokenRedirect({ scopes: ONEDRIVE_SCOPES, account });
+          return null;
+        }
+      }
+    }
+
+    async function connectOneDrive() {
+      if (window.location.protocol === 'file:') {
+        return showAlert("OneDrive chặn file://", "Microsoft OAuth không cho phép đăng nhập từ file://.\n\n👉 Máy tính: chạy 'Chạy ứng dụng.bat' → http://localhost:3000\n👉 Điện thoại: https://vxnghi90-ai.github.io/ql-von-cv/");
+      }
+      if (!getOneDriveClientId()) {
+        return showAlert("Thiếu Client ID", "Vào Cài đặt → Đồng bộ OneDrive, dán Azure Application (client) ID (đăng ký app tại portal.azure.com), rồi thử lại.");
+      }
+      try {
+        showNotification("Đang kết nối OneDrive...");
+        const token = await getOneDriveAccessToken(true);
+        if (token) {
+          state.onedriveConnected = true;
+          localStorage.setItem('loan_onedrive_connected', '1');
+          if (localStorage.getItem('loan_onedrive_auto_sync') === null) {
+            localStorage.setItem('loan_onedrive_auto_sync', '1');
+          }
+          showNotification("Đã kết nối OneDrive — bật tự động đồng bộ");
+          if (window.renderApp) window.renderApp();
+          if (state.isUnlocked && state.password) {
+            setTimeout(() => autoSyncOnAppEnter(), 400);
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        showAlert("Lỗi OneDrive", (err && err.message) || String(err));
+      }
+    }
+
+    async function disconnectOneDrive() {
+      try {
+        if (msalInstance) {
+          const accounts = msalInstance.getAllAccounts();
+          for (const acc of accounts) {
+            await msalInstance.logoutPopup({ account: acc }).catch(() => {});
+          }
+        }
+      } catch (_) {}
+      state.onedriveConnected = false;
+      state.onedriveAccount = null;
+      localStorage.removeItem('loan_onedrive_connected');
+      showNotification("Đã ngắt kết nối OneDrive!");
+      if (window.renderApp) window.renderApp();
+    }
+
+    function oneDriveItemContentUrl() {
+      // path segments must be encoded carefully for Graph
+      const encoded = ONEDRIVE_BACKUP_PATH.split('/').map(encodeURIComponent).join('/');
+      return `https://graph.microsoft.com/v1.0/me/drive/root:/${encoded}:/content`;
+    }
+
+    async function fetchOneDriveBackupBundle(opts = {}) {
+      const silent = !!opts.silent;
+      const token = await getOneDriveAccessToken(!silent);
+      if (!token) {
+        if (!silent) throw new Error("Chưa đăng nhập OneDrive");
+        return null;
+      }
+      const res = await fetch(oneDriveItemContentUrl(), {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.status === 404) return null;
+      if (res.status === 401) {
+        state.onedriveConnected = false;
+        if (!silent) {
+          showConfirm("OneDrive hết hạn", "Phiên OneDrive đã hết hạn. Kết nối lại?", () => connectOneDrive());
+        }
+        throw new Error("Phiên OneDrive đã hết hạn");
+      }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error((errData.error && errData.error.message) || (`HTTP ${res.status}`));
+      }
+      const encrypted = await res.text();
+      return { encrypted };
+    }
+
+    async function backupToOneDrive(opts = {}) {
+      const silent = !!opts.silent;
+      const keepalive = !!opts.keepalive;
+      if (!isOneDriveConnected() && !getOneDriveClientId()) {
+        if (silent) return false;
+        return connectOneDrive();
+      }
+      if (!state.password) {
+        if (!silent) showAlert("Lỗi", "Chưa thiết lập mã PIN bảo mật!");
+        return false;
+      }
+      if (_onedriveSyncInProgress && silent) return false;
+
+      if (!silent) showNotification("Đang sao lưu lên OneDrive...");
+      _onedriveSyncInProgress = true;
+      try {
+        const token = await getOneDriveAccessToken(!silent);
+        if (!token) {
+          if (!silent) showAlert("Lỗi", "Không lấy được token OneDrive. Thử kết nối lại.");
+          return false;
+        }
+        const backupAt = Date.now();
+        const encrypted = encrypt(state.password, JSON.stringify(buildAppDataPayload(backupAt)));
+        const res = await fetch(oneDriveItemContentUrl(), {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/octet-stream'
+          },
+          body: encrypted,
+          keepalive: keepalive
+        });
+        if (res.status === 401) {
+          state.onedriveConnected = false;
+          if (!silent) showConfirm("OneDrive hết hạn", "Phiên OneDrive đã hết hạn. Kết nối lại?", () => connectOneDrive());
+          throw new Error("Phiên OneDrive đã hết hạn");
+        }
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error((errData.error && errData.error.message) || (`HTTP ${res.status}`));
+        }
+
+        state.lastLocalChangeAt = Math.max(Number(state.lastLocalChangeAt || 0), backupAt);
+        localStorage.setItem('loan_last_local_change', String(state.lastLocalChangeAt));
+        localStorage.setItem('loan_last_onedrive_sync', String(backupAt));
+        localStorage.setItem('loan_last_cloud_sync', String(Math.max(backupAt, Number(localStorage.getItem('loan_last_cloud_sync') || 0))));
+        recomputeCloudDirty();
+        if (!silent) showNotification("Đã sao lưu lên OneDrive thành công!");
+        else console.log('[OneDrive] Auto backup OK @', new Date(backupAt).toISOString());
+        return true;
+      } catch (err) {
+        console.error("Lỗi OneDrive Backup:", err);
+        if (!silent && err.message !== "Phiên OneDrive đã hết hạn") {
+          showAlert("Lỗi Sao Lưu OneDrive", "Không thể lưu lên OneDrive: " + err.message);
+        }
+        return false;
+      } finally {
+        _onedriveSyncInProgress = false;
+      }
+    }
+
+    async function restoreFromOneDrive(opts = {}) {
+      const silent = !!opts.silent;
+      if (!state.password) {
+        if (!silent) showAlert("Lỗi", "Chưa thiết lập mã PIN bảo mật!");
+        return false;
+      }
+      if (!silent) showNotification("Đang khôi phục từ OneDrive...");
+      try {
+        const bundle = await fetchOneDriveBackupBundle({ silent });
+        if (!bundle) {
+          if (!silent) showAlert("Không tìm thấy", `Không tìm thấy file '${ONEDRIVE_BACKUP_PATH}' trên OneDrive.`);
+          return false;
+        }
+        try {
+          const data = JSON.parse(decrypt(state.password, bundle.encrypted));
+          if (data.customers && data.contracts && data.payments) {
+            applyAppDataFromCloud(data, { render: true, provider: 'onedrive' });
+            if (!silent) showNotification("Khôi phục dữ liệu từ OneDrive thành công!");
+            return true;
+          }
+          throw new Error("Dữ liệu sao lưu không tương thích!");
+        } catch (e) {
+          if (e && e.message === "Dữ liệu sao lưu không tương thích!") {
+            if (!silent) showAlert("Lỗi", e.message);
+          } else if (!silent) {
+            showAlert("Lỗi giải mã", "Mã PIN hiện tại không khớp file sao lưu OneDrive.");
+          }
+          return false;
+        }
+      } catch (err) {
+        console.error("Lỗi OneDrive Restore:", err);
+        if (!silent && err.message !== "Phiên OneDrive đã hết hạn") {
+          showAlert("Lỗi Khôi Phục OneDrive", err.message || String(err));
+        }
+        return false;
+      }
     }
 
     function safeGetLocal(key, defaultValue) {
@@ -1516,6 +1897,8 @@ const DEFAULT_CAPITAL_SOURCES = [
       lastLocalChangeAt: 0,
       dataDirtySinceBackup: false,
       gdriveToken: null,
+      onedriveConnected: false,
+      onedriveAccount: null,
       activeTab: 'dashboard',
       dashboardSubTab: 'capital',
       searchTerm: '',
@@ -1569,9 +1952,11 @@ const DEFAULT_CAPITAL_SOURCES = [
         if (localStorage.getItem('loan_gdrive_token')) {
           state.gdriveToken = localStorage.getItem('loan_gdrive_token');
         }
+        state.onedriveConnected = localStorage.getItem('loan_onedrive_connected') === '1';
         state.lastLocalChangeAt = Number(localStorage.getItem('loan_last_local_change') || 0);
         state.dataDirtySinceBackup = false;
         bindGDriveLifecycleHooks();
+        initOneDriveAuth().catch(e => console.warn('[OneDrive] initSecurity:', e));
       } catch(e) {
         console.warn("Lỗi khởi tạo Google Auth:", e);
       }
@@ -4625,6 +5010,47 @@ const DEFAULT_CAPITAL_SOURCES = [
               </div>
             </div>
 
+            <div class="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
+              <h3 class="font-bold text-slate-900 text-lg mb-2">📘 Đồng bộ OneDrive</h3>
+              <p class="text-slate-500 text-sm mb-3">Sao lưu mã hóa lên OneDrive (Microsoft). Tự động đồng bộ khi vào app / thoát app giống Google Drive. File: <code class="text-[10px] bg-slate-100 px-1 rounded">QuanLyVonCV/QuanLyVayTien_Backup.enc.json</code></p>
+
+              <div class="mb-4">
+                <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Azure Application (client) ID</label>
+                <input type="text" id="onedrive-client-id" class="w-full border p-2 text-xs rounded-xl focus:outline-none focus:border-sky-500 font-mono text-[11px]" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value="${localStorage.getItem('loan_onedrive_client_id') || ''}" onchange="localStorage.setItem('loan_onedrive_client_id', this.value.trim()); if(window.initOneDriveAuth) window.initOneDriveAuth();" />
+                <p class="text-[9px] text-slate-400 mt-1 leading-relaxed">
+                  Đăng ký app tại <b>portal.azure.com</b> → App registrations → New registration → loại <b>SPA</b>.
+                  Thêm Redirect URI: <code class="bg-sky-50 text-sky-800 px-1 rounded">${typeof getOneDriveRedirectUri === 'function' ? getOneDriveRedirectUri() : (location.origin + location.pathname)}</code>
+                  + quyền Graph: <b>Files.ReadWrite</b>, <b>User.Read</b>, <b>offline_access</b>.
+                </p>
+              </div>
+
+              ${isOneDriveConnected() ? `
+              <div class="mb-4 p-3 rounded-xl border ${isAutoOneDriveSyncEnabled() ? 'bg-sky-50 border-sky-200' : 'bg-slate-50 border-slate-200'}">
+                <label class="flex items-start gap-2 cursor-pointer">
+                  <input type="checkbox" class="mt-0.5 w-4 h-4 accent-sky-600" ${isAutoOneDriveSyncEnabled() ? 'checked' : ''} onchange="window.setAutoOneDriveSync && window.setAutoOneDriveSync(this.checked)" />
+                  <span class="text-xs font-bold text-slate-800 leading-snug">Tự động đồng bộ OneDrive khi vào app &amp; sao lưu khi thoát app</span>
+                </label>
+                <div class="mt-2 text-[10px] text-slate-500 space-y-0.5 pl-6">
+                  <div>• Lần đồng bộ OneDrive: <b class="text-slate-700">${formatSyncTime(localStorage.getItem('loan_last_onedrive_sync'))}</b></div>
+                  <div>• Thay đổi local gần nhất: <b class="text-slate-700">${formatSyncTime(state.lastLocalChangeAt || localStorage.getItem('loan_last_local_change'))}</b></div>
+                </div>
+              </div>
+              ` : ''}
+
+              <div class="flex flex-wrap gap-2">
+                ${isOneDriveConnected()
+                  ? `
+                  <span class="w-full block text-xs font-semibold text-sky-700 mb-1">✓ Đã kết nối OneDrive${isAutoOneDriveSyncEnabled() ? ' · Auto-sync BẬT' : ' · Auto-sync TẮT'}</span>
+                  <button onclick="window.autoSyncOnAppEnter && window.autoSyncOnAppEnter()" class="bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs px-4 py-2.5 rounded-xl">🔄 Đồng bộ ngay</button>
+                  <button onclick="window.backupToOneDrive && window.backupToOneDrive()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-4 py-2.5 rounded-xl">☁️ Sao lưu OneDrive</button>
+                  <button onclick="window.restoreFromOneDrive && window.restoreFromOneDrive()" class="bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2.5 rounded-xl">📥 Khôi phục OneDrive</button>
+                  <button onclick="window.disconnectOneDrive && window.disconnectOneDrive()" class="text-rose-600 hover:bg-rose-50 font-bold border border-rose-200 px-3 py-2.5 rounded-xl text-xs">Ngắt kết nối</button>
+                  `
+                  : `<button onclick="window.connectOneDrive && window.connectOneDrive()" class="bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs px-4 py-2.5 rounded-xl">🔗 Kết nối OneDrive</button>`
+                }
+              </div>
+            </div>
+
             <div class="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm col-span-1 md:col-span-3">
               <h3 class="font-bold text-rose-700 text-lg mb-2">♻️ Reset & Tối ưu nguồn vốn</h3>
               <p class="text-slate-500 text-sm mb-3">Reset về đúng dữ liệu Excel gốc hoặc xóa trắng. Hoặc tối ưu lại Timeline nguồn vốn cho tất cả HĐ đang vay (ưu tiên nguồn lãi suất thấp nhất trước, tự chia nếu thiếu vốn ở nguồn rẻ).</p>
@@ -6493,7 +6919,15 @@ const DEFAULT_CAPITAL_SOURCES = [
     window.restoreFromGoogleDrive = restoreFromGoogleDrive;
     window.autoSyncOnAppEnter = autoSyncOnAppEnter;
     window.autoBackupOnAppLeave = autoBackupOnAppLeave;
+    window.autoBackupAllConnected = autoBackupAllConnected;
     window.isAutoGDriveSyncEnabled = isAutoGDriveSyncEnabled;
+    window.initOneDriveAuth = initOneDriveAuth;
+    window.connectOneDrive = connectOneDrive;
+    window.disconnectOneDrive = disconnectOneDrive;
+    window.backupToOneDrive = backupToOneDrive;
+    window.restoreFromOneDrive = restoreFromOneDrive;
+    window.isAutoOneDriveSyncEnabled = isAutoOneDriveSyncEnabled;
+    window.isOneDriveConnected = isOneDriveConnected;
 
     // KHỞI ĐỘNG CHẠY NGAY - BẢN CHUẨN OFFLINE (bỏ cloud/login hoàn toàn)
     try {
