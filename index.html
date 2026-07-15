@@ -12,7 +12,6 @@
   <!-- PWA Manifest & Google GIS Client & Chart.js -->
   <link rel="manifest" href="manifest.json">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   
   <!-- Service Worker Registration with Update Handling -->
@@ -1079,9 +1078,7 @@ const DEFAULT_CAPITAL_SOURCES = [
       state.lastLocalChangeAt = cloudAt;
       localStorage.setItem('loan_last_local_change', String(cloudAt));
       localStorage.setItem('loan_last_cloud_sync', String(cloudAt));
-      if (opts.provider === 'onedrive') {
-        localStorage.setItem('loan_last_onedrive_sync', String(cloudAt));
-      } else if (opts.provider === 'gdrive') {
+      if (opts.provider === 'gdrive') {
         localStorage.setItem('loan_last_gdrive_sync', String(cloudAt));
       }
       saveStateOfflineAndRefresh(opts.render !== false, { skipDirtyMark: true });
@@ -1099,9 +1096,7 @@ const DEFAULT_CAPITAL_SOURCES = [
 
     function scheduleDebouncedAutoBackup() {
       if (!state.isUnlocked || !state.password) return;
-      const anyCloud =
-        (isAutoGDriveSyncEnabled() && state.gdriveToken) ||
-        (typeof isAutoOneDriveSyncEnabled === 'function' && isAutoOneDriveSyncEnabled() && typeof isOneDriveConnected === 'function' && isOneDriveConnected());
+      const anyCloud = (isAutoGDriveSyncEnabled() && state.gdriveToken);
       if (!anyCloud) return;
       clearTimeout(_autoBackupTimer);
       // Sao lưu nền sau 20s khi có thay đổi (phòng kill app đột ngột)
@@ -1346,9 +1341,6 @@ const DEFAULT_CAPITAL_SOURCES = [
       if (state.gdriveToken && isAutoGDriveSyncEnabled()) {
         if (localAt > Number(localStorage.getItem('loan_last_gdrive_sync') || 0)) dirty = true;
       }
-      if (typeof isOneDriveConnected === 'function' && isOneDriveConnected() && typeof isAutoOneDriveSyncEnabled === 'function' && isAutoOneDriveSyncEnabled()) {
-        if (localAt > Number(localStorage.getItem('loan_last_onedrive_sync') || 0)) dirty = true;
-      }
       state.dataDirtySinceBackup = dirty;
       return dirty;
     }
@@ -1358,15 +1350,12 @@ const DEFAULT_CAPITAL_SOURCES = [
       if (isAutoGDriveSyncEnabled() && state.gdriveToken) {
         jobs.push(backupToGoogleDrive(opts).catch(err => console.warn('[GDrive] backup fail', err)));
       }
-      if (typeof isAutoOneDriveSyncEnabled === 'function' && isAutoOneDriveSyncEnabled() && typeof isOneDriveConnected === 'function' && isOneDriveConnected()) {
-        jobs.push(backupToOneDrive(opts).catch(err => console.warn('[OneDrive] backup fail', err)));
-      }
       if (!jobs.length) return;
       await Promise.allSettled(jobs);
       recomputeCloudDirty();
     }
 
-    /** Vào app / mở lại tab: lấy bản cloud mới nhất (GDrive / OneDrive), đẩy local nếu local mới hơn */
+    /** Vào app / mở lại tab: lấy bản cloud mới nhất (GDrive), đẩy local nếu local mới hơn */
     async function autoSyncOnAppEnter() {
       if (!state.isUnlocked || !state.password) return;
       if (Date.now() - _lastEnterSyncAt < 4000) return;
@@ -1396,27 +1385,6 @@ const DEFAULT_CAPITAL_SOURCES = [
         }
       }
 
-      // --- OneDrive ---
-      if (isAutoOneDriveSyncEnabled() && isOneDriveConnected()) {
-        try {
-          const bundle = await fetchOneDriveBackupBundle({ silent: true });
-          if (!bundle) {
-            candidates.push({ provider: 'onedrive', at: 0, missing: true });
-          } else {
-            try {
-              const data = JSON.parse(decrypt(state.password, bundle.encrypted));
-              if (data && data.contracts && data.customers) {
-                candidates.push({ provider: 'onedrive', at: Number(data.backupAt || 0), data });
-              }
-            } catch (e) {
-              console.warn('[OneDrive] Auto sync: không giải mã được bản cloud (PIN khác?)');
-            }
-          }
-        } catch (err) {
-          console.warn('[OneDrive] Auto sync on enter failed:', err && err.message);
-        }
-      }
-
       if (!candidates.length) return;
 
       const withData = candidates.filter(c => c.data);
@@ -1424,13 +1392,10 @@ const DEFAULT_CAPITAL_SOURCES = [
 
       if (best && best.at > localAt) {
         applyAppDataFromCloud(best.data, { render: true, provider: best.provider });
-        const label = best.provider === 'onedrive' ? 'OneDrive' : 'Google Drive';
-        showNotification(`☁️ Đã tự động đồng bộ dữ liệu mới từ ${label}`);
-        // Đẩy sang cloud còn lại nếu chúng cũ hơn
+        showNotification(`☁️ Đã tự động đồng bộ dữ liệu mới từ Google Drive`);
         for (const c of candidates) {
           if (c.provider === best.provider) continue;
           if (c.provider === 'gdrive') await backupToGoogleDrive({ silent: true });
-          if (c.provider === 'onedrive') await backupToOneDrive({ silent: true });
         }
       } else if (state.dataDirtySinceBackup || candidates.some(c => c.missing || (c.data && localAt > c.at))) {
         await autoBackupAllConnected({ silent: true });
@@ -1476,323 +1441,6 @@ const DEFAULT_CAPITAL_SOURCES = [
       });
     }
 
-    // === ONEDRIVE (Microsoft Graph + MSAL) ===
-    let msalInstance = null;
-    let _onedriveSyncInProgress = false;
-    const ONEDRIVE_SCOPES = ['Files.ReadWrite', 'User.Read', 'offline_access'];
-    const ONEDRIVE_BACKUP_PATH = 'QuanLyVonCV/QuanLyVayTien_Backup.enc.json';
-
-    function getOneDriveClientId() {
-      return (localStorage.getItem('loan_onedrive_client_id') || '').trim();
-    }
-
-    function getOneDriveRedirectUri() {
-      return window.location.href.split('#')[0].split('?')[0];
-    }
-
-    function isAutoOneDriveSyncEnabled() {
-      return localStorage.getItem('loan_onedrive_auto_sync') !== '0';
-    }
-    function setAutoOneDriveSync(enabled) {
-      localStorage.setItem('loan_onedrive_auto_sync', enabled ? '1' : '0');
-      showNotification(enabled
-        ? "Đã bật tự động đồng bộ OneDrive (vào app / thoát app)"
-        : "Đã tắt tự động đồng bộ OneDrive");
-      if (enabled && state.isUnlocked && isOneDriveConnected()) {
-        setTimeout(() => autoSyncOnAppEnter(), 300);
-      }
-      if (window.renderApp) window.renderApp();
-    }
-    window.setAutoOneDriveSync = setAutoOneDriveSync;
-
-    function isOneDriveConnected() {
-      if (state.onedriveConnected) return true;
-      try {
-        if (msalInstance) {
-          const accounts = msalInstance.getAllAccounts();
-          if (accounts && accounts.length) {
-            state.onedriveConnected = true;
-            state.onedriveAccount = accounts[0];
-            return true;
-          }
-        }
-      } catch (_) {}
-      return localStorage.getItem('loan_onedrive_connected') === '1';
-    }
-
-    async function ensureMsalReady() {
-      if (typeof msal === 'undefined' || !msal.PublicClientApplication) {
-        throw new Error("Thư viện Microsoft MSAL chưa tải xong. Thử lại sau vài giây.");
-      }
-      const clientId = getOneDriveClientId();
-      if (!clientId) {
-        throw new Error("Chưa nhập Azure Application (client) ID cho OneDrive. Vào Cài đặt dán Client ID trước.");
-      }
-      if (msalInstance && msalInstance.getConfiguration().auth.clientId === clientId) {
-        return msalInstance;
-      }
-      msalInstance = new msal.PublicClientApplication({
-        auth: {
-          clientId,
-          authority: 'https://login.microsoftonline.com/common',
-          redirectUri: getOneDriveRedirectUri(),
-          postLogoutRedirectUri: getOneDriveRedirectUri()
-        },
-        cache: {
-          cacheLocation: 'localStorage',
-          storeAuthStateInCookie: true
-        }
-      });
-      await msalInstance.initialize();
-      try {
-        const redirectResult = await msalInstance.handleRedirectPromise();
-        if (redirectResult && redirectResult.account) {
-          state.onedriveAccount = redirectResult.account;
-          state.onedriveConnected = true;
-          localStorage.setItem('loan_onedrive_connected', '1');
-          if (localStorage.getItem('loan_onedrive_auto_sync') === null) {
-            localStorage.setItem('loan_onedrive_auto_sync', '1');
-          }
-          if (state.isUnlocked && state.password) {
-            setTimeout(() => autoSyncOnAppEnter(), 500);
-          }
-        }
-      } catch (e) {
-        console.warn('[OneDrive] handleRedirectPromise:', e);
-      }
-      const accounts = msalInstance.getAllAccounts();
-      if (accounts && accounts.length) {
-        state.onedriveAccount = accounts[0];
-        state.onedriveConnected = true;
-        localStorage.setItem('loan_onedrive_connected', '1');
-      }
-      return msalInstance;
-    }
-
-    async function initOneDriveAuth() {
-      try {
-        if (!getOneDriveClientId()) return;
-        if (typeof msal === 'undefined') {
-          // MSAL script may still be loading
-          setTimeout(() => { initOneDriveAuth().catch(() => {}); }, 800);
-          return;
-        }
-        await ensureMsalReady();
-      } catch (e) {
-        console.warn('[OneDrive] init:', e && e.message);
-      }
-    }
-
-    async function getOneDriveAccessToken(interactive = false) {
-      await ensureMsalReady();
-      let account = state.onedriveAccount || (msalInstance.getAllAccounts()[0] || null);
-      const request = { scopes: ONEDRIVE_SCOPES, account };
-
-      if (!account) {
-        if (!interactive) return null;
-        try {
-          const login = await msalInstance.loginPopup({ scopes: ONEDRIVE_SCOPES });
-          account = login.account;
-          state.onedriveAccount = account;
-          state.onedriveConnected = true;
-          localStorage.setItem('loan_onedrive_connected', '1');
-          return login.accessToken;
-        } catch (popupErr) {
-          console.warn('[OneDrive] loginPopup failed, trying redirect', popupErr);
-          await msalInstance.loginRedirect({ scopes: ONEDRIVE_SCOPES });
-          return null;
-        }
-      }
-
-      try {
-        const silent = await msalInstance.acquireTokenSilent({ ...request, account });
-        return silent.accessToken;
-      } catch (silentErr) {
-        if (!interactive) return null;
-        try {
-          const popup = await msalInstance.acquireTokenPopup({ scopes: ONEDRIVE_SCOPES, account });
-          return popup.accessToken;
-        } catch (popupErr) {
-          await msalInstance.acquireTokenRedirect({ scopes: ONEDRIVE_SCOPES, account });
-          return null;
-        }
-      }
-    }
-
-    async function connectOneDrive() {
-      if (window.location.protocol === 'file:') {
-        return showAlert("OneDrive chặn file://", "Microsoft OAuth không cho phép đăng nhập từ file://.\n\n👉 Máy tính: chạy 'Chạy ứng dụng.bat' → http://localhost:3000\n👉 Điện thoại: https://vxnghi90-ai.github.io/ql-von-cv/");
-      }
-      if (!getOneDriveClientId()) {
-        return showAlert("Thiếu Client ID", "Vào Cài đặt → Đồng bộ OneDrive, dán Azure Application (client) ID (đăng ký app tại portal.azure.com), rồi thử lại.");
-      }
-      try {
-        showNotification("Đang kết nối OneDrive...");
-        const token = await getOneDriveAccessToken(true);
-        if (token) {
-          state.onedriveConnected = true;
-          localStorage.setItem('loan_onedrive_connected', '1');
-          if (localStorage.getItem('loan_onedrive_auto_sync') === null) {
-            localStorage.setItem('loan_onedrive_auto_sync', '1');
-          }
-          showNotification("Đã kết nối OneDrive — bật tự động đồng bộ");
-          if (window.renderApp) window.renderApp();
-          if (state.isUnlocked && state.password) {
-            setTimeout(() => autoSyncOnAppEnter(), 400);
-          }
-        }
-      } catch (err) {
-        console.error(err);
-        showAlert("Lỗi OneDrive", (err && err.message) || String(err));
-      }
-    }
-
-    async function disconnectOneDrive() {
-      try {
-        if (msalInstance) {
-          const accounts = msalInstance.getAllAccounts();
-          for (const acc of accounts) {
-            await msalInstance.logoutPopup({ account: acc }).catch(() => {});
-          }
-        }
-      } catch (_) {}
-      state.onedriveConnected = false;
-      state.onedriveAccount = null;
-      localStorage.removeItem('loan_onedrive_connected');
-      showNotification("Đã ngắt kết nối OneDrive!");
-      if (window.renderApp) window.renderApp();
-    }
-
-    function oneDriveItemContentUrl() {
-      // path segments must be encoded carefully for Graph
-      const encoded = ONEDRIVE_BACKUP_PATH.split('/').map(encodeURIComponent).join('/');
-      return `https://graph.microsoft.com/v1.0/me/drive/root:/${encoded}:/content`;
-    }
-
-    async function fetchOneDriveBackupBundle(opts = {}) {
-      const silent = !!opts.silent;
-      const token = await getOneDriveAccessToken(!silent);
-      if (!token) {
-        if (!silent) throw new Error("Chưa đăng nhập OneDrive");
-        return null;
-      }
-      const res = await fetch(oneDriveItemContentUrl(), {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.status === 404) return null;
-      if (res.status === 401) {
-        state.onedriveConnected = false;
-        if (!silent) {
-          showConfirm("OneDrive hết hạn", "Phiên OneDrive đã hết hạn. Kết nối lại?", () => connectOneDrive());
-        }
-        throw new Error("Phiên OneDrive đã hết hạn");
-      }
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error((errData.error && errData.error.message) || (`HTTP ${res.status}`));
-      }
-      const encrypted = await res.text();
-      return { encrypted };
-    }
-
-    async function backupToOneDrive(opts = {}) {
-      const silent = !!opts.silent;
-      const keepalive = !!opts.keepalive;
-      if (!isOneDriveConnected() && !getOneDriveClientId()) {
-        if (silent) return false;
-        return connectOneDrive();
-      }
-      if (!state.password) {
-        if (!silent) showAlert("Lỗi", "Chưa thiết lập mã PIN bảo mật!");
-        return false;
-      }
-      if (_onedriveSyncInProgress && silent) return false;
-
-      if (!silent) showNotification("Đang sao lưu lên OneDrive...");
-      _onedriveSyncInProgress = true;
-      try {
-        const token = await getOneDriveAccessToken(!silent);
-        if (!token) {
-          if (!silent) showAlert("Lỗi", "Không lấy được token OneDrive. Thử kết nối lại.");
-          return false;
-        }
-        const backupAt = Date.now();
-        const encrypted = encrypt(state.password, JSON.stringify(buildAppDataPayload(backupAt)));
-        const res = await fetch(oneDriveItemContentUrl(), {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/octet-stream'
-          },
-          body: encrypted,
-          keepalive: keepalive
-        });
-        if (res.status === 401) {
-          state.onedriveConnected = false;
-          if (!silent) showConfirm("OneDrive hết hạn", "Phiên OneDrive đã hết hạn. Kết nối lại?", () => connectOneDrive());
-          throw new Error("Phiên OneDrive đã hết hạn");
-        }
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error((errData.error && errData.error.message) || (`HTTP ${res.status}`));
-        }
-
-        state.lastLocalChangeAt = Math.max(Number(state.lastLocalChangeAt || 0), backupAt);
-        localStorage.setItem('loan_last_local_change', String(state.lastLocalChangeAt));
-        localStorage.setItem('loan_last_onedrive_sync', String(backupAt));
-        localStorage.setItem('loan_last_cloud_sync', String(Math.max(backupAt, Number(localStorage.getItem('loan_last_cloud_sync') || 0))));
-        recomputeCloudDirty();
-        if (!silent) showNotification("Đã sao lưu lên OneDrive thành công!");
-        else console.log('[OneDrive] Auto backup OK @', new Date(backupAt).toISOString());
-        return true;
-      } catch (err) {
-        console.error("Lỗi OneDrive Backup:", err);
-        if (!silent && err.message !== "Phiên OneDrive đã hết hạn") {
-          showAlert("Lỗi Sao Lưu OneDrive", "Không thể lưu lên OneDrive: " + err.message);
-        }
-        return false;
-      } finally {
-        _onedriveSyncInProgress = false;
-      }
-    }
-
-    async function restoreFromOneDrive(opts = {}) {
-      const silent = !!opts.silent;
-      if (!state.password) {
-        if (!silent) showAlert("Lỗi", "Chưa thiết lập mã PIN bảo mật!");
-        return false;
-      }
-      if (!silent) showNotification("Đang khôi phục từ OneDrive...");
-      try {
-        const bundle = await fetchOneDriveBackupBundle({ silent });
-        if (!bundle) {
-          if (!silent) showAlert("Không tìm thấy", `Không tìm thấy file '${ONEDRIVE_BACKUP_PATH}' trên OneDrive.`);
-          return false;
-        }
-        try {
-          const data = JSON.parse(decrypt(state.password, bundle.encrypted));
-          if (data.customers && data.contracts && data.payments) {
-            applyAppDataFromCloud(data, { render: true, provider: 'onedrive' });
-            if (!silent) showNotification("Khôi phục dữ liệu từ OneDrive thành công!");
-            return true;
-          }
-          throw new Error("Dữ liệu sao lưu không tương thích!");
-        } catch (e) {
-          if (e && e.message === "Dữ liệu sao lưu không tương thích!") {
-            if (!silent) showAlert("Lỗi", e.message);
-          } else if (!silent) {
-            showAlert("Lỗi giải mã", "Mã PIN hiện tại không khớp file sao lưu OneDrive.");
-          }
-          return false;
-        }
-      } catch (err) {
-        console.error("Lỗi OneDrive Restore:", err);
-        if (!silent && err.message !== "Phiên OneDrive đã hết hạn") {
-          showAlert("Lỗi Khôi Phục OneDrive", err.message || String(err));
-        }
-        return false;
-      }
-    }
 
     function safeGetLocal(key, defaultValue) {
       try {
@@ -1897,8 +1545,6 @@ const DEFAULT_CAPITAL_SOURCES = [
       lastLocalChangeAt: 0,
       dataDirtySinceBackup: false,
       gdriveToken: null,
-      onedriveConnected: false,
-      onedriveAccount: null,
       activeTab: 'dashboard',
       dashboardSubTab: 'capital',
       searchTerm: '',
@@ -1952,11 +1598,9 @@ const DEFAULT_CAPITAL_SOURCES = [
         if (localStorage.getItem('loan_gdrive_token')) {
           state.gdriveToken = localStorage.getItem('loan_gdrive_token');
         }
-        state.onedriveConnected = localStorage.getItem('loan_onedrive_connected') === '1';
         state.lastLocalChangeAt = Number(localStorage.getItem('loan_last_local_change') || 0);
         state.dataDirtySinceBackup = false;
         bindGDriveLifecycleHooks();
-        initOneDriveAuth().catch(e => console.warn('[OneDrive] initSecurity:', e));
       } catch(e) {
         console.warn("Lỗi khởi tạo Google Auth:", e);
       }
@@ -2256,9 +1900,38 @@ const DEFAULT_CAPITAL_SOURCES = [
       return result;
     }
 
+    /** Ngày local YYYY-MM-DD (tránh lệch timezone khi dùng toISOString) */
+    function todayYMD() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    function ymdToLocalDate(dateStr) {
+      if (!dateStr) return null;
+      const s = String(dateStr).trim();
+      let y, m, d;
+      if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+        const p = s.slice(0, 10).split('-');
+        y = +p[0]; m = +p[1]; d = +p[2];
+      } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {
+        const p = s.split('/');
+        d = +p[0]; m = +p[1]; y = +p[2];
+      } else {
+        const dt = new Date(s);
+        if (isNaN(dt.getTime())) return null;
+        return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+      }
+      if (!y || !m || !d) return null;
+      return new Date(y, m - 1, d);
+    }
+    function localDateToYMD(date) {
+      if (!date || isNaN(date.getTime())) return '';
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    }
+
     function calculateStandardDays(startDateStr, endDateStr) {
-      const start = new Date(startDateStr); const end = new Date(endDateStr);
-      if (isNaN(start) || isNaN(end) || end <= start) return 0;
+      const start = ymdToLocalDate(startDateStr);
+      const end = ymdToLocalDate(endDateStr);
+      if (!start || !end || end <= start) return 0;
       let months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
       let tempDate = addMonthsSafe(start, months);
       if (tempDate > end) { months--; tempDate = addMonthsSafe(start, months); }
@@ -2397,7 +2070,7 @@ const DEFAULT_CAPITAL_SOURCES = [
       return `${y}-${mm}-${dd}`;
     }
 
-    // Tính Lãi còn nợ từ "Ngày vay sau đáo" đến Ngày hiện tại (targetDateStr)
+    // Tính lãi phát sinh từ "Ngày vay sau đáo" đến Ngày hiện tại (targetDateStr)
     // Quy tắc:
     // - Nếu chưa đủ 1 tháng: Lãi = Số tiền lãi/ngày * Số ngày lẻ trôi qua
     // - Nếu đã đủ hoặc vượt 1 tháng: Lãi = (Số tháng tròn * Lãi 1 tháng 30d) + (Số tiền lãi/ngày * Số ngày lẻ dư)
@@ -2423,36 +2096,36 @@ const DEFAULT_CAPITAL_SOURCES = [
       const extraDays = isFirstCycle ? calculateStandardDays(contract.NgayVay, contract.NgayBatDauTinhLai || contract.NgayVay) : 0;
       const extraLai = extraDays > 0 ? extraDays * dailyInterest : 0;
 
-      const startDate = new Date(ngayVaySauDaoStr);
-      const endDate = new Date(targetDateStr);
-      if (endDate < startDate) return { laiConNo: 0, fullMonths: 0, remDays: 0, ngayVaySauDaoStr, extraDays, extraLai };
+      const startDate = ymdToLocalDate(ngayVaySauDaoStr);
+      const endDate = ymdToLocalDate(targetDateStr);
+      if (!startDate || !endDate || endDate < startDate) {
+        return { laiConNo: Math.max(0, extraLai), fullMonths: 0, remDays: 0, ngayVaySauDaoStr, extraDays, extraLai };
+      }
 
       let y1 = startDate.getFullYear(), m1 = startDate.getMonth(), d1 = startDate.getDate();
       let y2 = endDate.getFullYear(), m2 = endDate.getMonth(), d2 = endDate.getDate();
 
       let fullMonths = (y2 - y1) * 12 + (m2 - m1);
       
-      let anchorDate = new Date(y1, m1 + fullMonths, d1);
-      const maxAnchorDays = new Date(y1, m1 + fullMonths + 1, 0).getDate();
-      if (d1 > maxAnchorDays) anchorDate = new Date(y1, m1 + fullMonths, maxAnchorDays);
+      let anchorDate = new Date(y1, m1 + fullMonths, Math.min(d1, new Date(y1, m1 + fullMonths + 1, 0).getDate()));
 
       if (endDate < anchorDate) {
         fullMonths -= 1;
-        anchorDate = new Date(y1, m1 + fullMonths, d1);
-        const maxPrevDays = new Date(y1, m1 + fullMonths + 1, 0).getDate();
-        if (d1 > maxPrevDays) anchorDate = new Date(y1, m1 + fullMonths, maxPrevDays);
+        if (fullMonths < 0) fullMonths = 0;
+        anchorDate = new Date(y1, m1 + fullMonths, Math.min(d1, new Date(y1, m1 + fullMonths + 1, 0).getDate()));
       }
 
-      const remDays = calculateStandardDays(anchorDate.toISOString().split('T')[0], targetDateStr);
-      let laiConNo = 0;
+      const remDays = Math.max(0, calculateStandardDays(localDateToYMD(anchorDate), targetDateStr));
+      let laiPhatSinh = 0;
       if (fullMonths <= 0) {
-        laiConNo = (remDays * dailyInterest) + extraLai;
+        laiPhatSinh = (remDays * dailyInterest) + extraLai;
       } else {
-        laiConNo = (fullMonths * baseMonth30) + (remDays * dailyInterest) + extraLai;
+        laiPhatSinh = (fullMonths * baseMonth30) + (remDays * dailyInterest) + extraLai;
       }
+      laiPhatSinh = Math.max(0, Math.round(laiPhatSinh));
 
       return {
-        laiConNo,
+        laiConNo: laiPhatSinh,
         fullMonths,
         remDays,
         ngayVaySauDaoStr,
@@ -2463,8 +2136,11 @@ const DEFAULT_CAPITAL_SOURCES = [
 
     function calculateContractInterest(contract) {
       const today = new Date();
-      let endCalculateDate = contract.TrangThai === 'Đã tất toán' && contract.NgayTatToan ? new Date(contract.NgayTatToan) : today;
-      const endCalStr = endCalculateDate.toISOString().split('T')[0];
+      today.setHours(0, 0, 0, 0);
+      // Dùng ngày local — không dùng toISOString (lệch UTC)
+      const endCalStr = (contract.TrangThai === 'Đã tất toán' && contract.NgayTatToan)
+        ? (toInputDate(contract.NgayTatToan) || String(contract.NgayTatToan).slice(0, 10))
+        : todayYMD();
       
       let soNgayVay = calculateStandardDays(contract.NgayVay, endCalStr);
 
@@ -2484,8 +2160,11 @@ const DEFAULT_CAPITAL_SOURCES = [
       }
 
       const sauDaoResult = calculateInterestFromNgayVaySauDao(contract, endCalStr);
-      const laiConNo = sauDaoResult.laiConNo;
-      const tongLaiPhatSinh = sauDaoResult.laiConNo;
+      // Lãi còn nợ = lãi phát sinh từ Ngày vay sau đáo → nay + nợ lãi cũ (đóng thiếu)
+      const laiPhatSinh = Math.max(0, Math.round(Number(sauDaoResult.laiConNo || 0)));
+      const laiNoCu = Math.max(0, Math.round(Number(contract.laiConNo || 0)));
+      const laiConNo = laiPhatSinh + laiNoCu;
+      const tongLaiPhatSinh = laiConNo;
       const ngayVaySauDaoStr = sauDaoResult.ngayVaySauDaoStr || ngayTinhLaiStr;
 
       const ngayDongLaiGanNhat = laiPayments.length > 0 ? laiPayments[0].NgayThanhToan : null;
@@ -2506,16 +2185,20 @@ const DEFAULT_CAPITAL_SOURCES = [
       const activeSeg = lichSuNguon.find(s => s.NgayKetThuc === null) || { MaNguon: contract.MaNguon };
       const activeSource = (state.capitalSources || []).find(s => s.MaNguon === activeSeg.MaNguon) || { TenNguon: "N/A", LaiSuatThang: 0 };
 
+      const daoHanDate = contract.NgayDaoHan ? ymdToLocalDate(contract.NgayDaoHan) : null;
+
       return {
         soNgayVay,
         tongLaiPhatSinh,
         laiDaTra,
         gocDaTra,
         laiConNo,
+        laiPhatSinh,
+        laiNoCu,
         duNoGocHienTai,
         chiPhiVonLuyKe,
         chiPhiVonDaTra,
-        laQuaHan: contract.TrangThai === 'Đang vay' && contract.NgayDaoHan && today > new Date(contract.NgayDaoHan),
+        laQuaHan: contract.TrangThai === 'Đang vay' && daoHanDate && today > daoHanDate,
         nguonVon: activeSource.TenNguon,
         laiSuatDauVao: activeSource.LaiSuatThang,
         activeMaNguon: activeSeg.MaNguon,
@@ -2628,6 +2311,9 @@ const DEFAULT_CAPITAL_SOURCES = [
       const oldToNew = {};
       let changed = false;
       state.contracts.forEach(c => {
+        if (c.laiConNo === undefined || c.laiConNo === null) {
+          c.laiConNo = 0;
+        }
         if (!c.MaHopDong) return;
         const m = /^HDVT(\d+)$/.exec(c.MaHopDong);
         if (m) {
@@ -2744,7 +2430,7 @@ const DEFAULT_CAPITAL_SOURCES = [
     function getStats() {
       let stats = { tongVonChoVay: 0, dangVayCount: 0, tatToanCount: 0, quaHanCount: 0, tongLaiConNo: 0, laiThuTrongNgay: 0, tongVonDauVao: 0, tongChiPhiLaiNguon: 0, sourceDetails: {}, tongLaiThucThu: 0, tongLaiKhuyenMai: 0, tongLaiNhanVienGiu: 0, tongGocNhanVienGiu: 0 };
 
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = todayYMD();
       state.contracts.forEach(contract => {
         const calc = calculateContractInterest(contract);
         if (contract.TrangThai === 'Đang vay') {
@@ -3447,6 +3133,7 @@ const DEFAULT_CAPITAL_SOURCES = [
       // Chỉnh ngày bắt đầu tính lãi / đóng lãi (như yêu cầu khách lùi ngày) trên cùng nguồn + cùng hoặc giảm số vốn → bỏ qua hoàn toàn.
       const editingId = (state.editingContract && state.editingContract.MaHopDong) || null;
       const oldC = editingId ? state.contracts.find(c => c.MaHopDong === editingId) : null;
+      contractData.laiConNo = oldC ? (Number(oldC.laiConNo) || 0) : 0;
       let skipCapitalCheck = false;
       let requiredCheckAmount = contractData.SoTienVay;
       if (oldC) {
@@ -3572,6 +3259,50 @@ const DEFAULT_CAPITAL_SOURCES = [
         KyLaiDen: form.KyLaiDen ? parseDateToISO(form.KyLaiDen.value) : ''
       };
       if (p.SoTienTra <= 0) return showAlert("Lỗi", "Số tiền đóng không hợp lệ");
+
+      const c = state.contracts.find(x => x.MaHopDong === p.MaHopDong);
+      if (c) {
+        const isLai = p.LoaiThanhToan === 'Trả lãi';
+        let soTienPhaiDong = 0;
+        if (isLai) {
+          const priorCount = (state.payments || []).filter(pay => pay.MaHopDong === p.MaHopDong && pay.LoaiThanhToan === 'Trả lãi').length;
+          const isFirst = priorCount === 0;
+          soTienPhaiDong = calculateInterestForPeriod(c, p.KyLaiTu, p.KyLaiDen, isFirst) + Number(c.laiConNo || 0);
+        } else {
+          const calc = calculateContractInterest(c);
+          soTienPhaiDong = (calc.duNoGocHienTai || c.SoTienVay) + Number(c.laiConNo || 0);
+        }
+
+        const chenhLech = p.SoTienTra + p.TienKhuyenMai - soTienPhaiDong;
+        if (chenhLech < 0) {
+          const soTienThieu = Math.abs(chenhLech);
+          p.soTienNoConLai = soTienThieu;
+          c.laiConNo = soTienThieu;
+          p.GhiChu = `Đóng thiếu - Ghi nhận nợ ${formatVND(soTienThieu)}` + (p.GhiChu ? ` (${p.GhiChu})` : '');
+        } else {
+          c.laiConNo = 0;
+          if (chenhLech > 0) {
+            const radios = form.elements['luaChonThuThua'];
+            let chosen = '';
+            if (radios) {
+              if (radios.value) {
+                chosen = radios.value;
+              } else {
+                for (let r of radios) {
+                  if (r.checked) chosen = r.value;
+                }
+              }
+            }
+            if (!chosen) {
+              return showAlert("Lỗi", "Vui lòng chọn phương án xử lý số tiền thu thừa!");
+            }
+            p.luaChonThuThua = chosen;
+            if (chosen === 'transfer_next_month') {
+              p.soTienThuaChuyenKySau = chenhLech;
+            }
+          }
+        }
+      }
 
       // Add payment record
       state.payments.unshift(p);
@@ -3738,6 +3469,10 @@ const DEFAULT_CAPITAL_SOURCES = [
         if (s && id){ s.value=id; s.dispatchEvent(new Event('change')); }
         // ensure preview for default
         if (window.updatePaymentInterestPreview) setTimeout(()=>window.updatePaymentInterestPreview(), 60);
+        // Reset choice radio buttons
+        const radios = document.getElementsByName('luaChonThuThua');
+        for (let r of radios) r.checked = false;
+        if (window.updatePaymentDifference) setTimeout(()=>window.updatePaymentDifference(), 100);
       }, 80);
       if(window.showModal) window.showModal('payment-modal'); else { const m=document.getElementById('payment-modal'); if(m) m.classList.remove('hidden'); } 
     }
@@ -3823,7 +3558,7 @@ const DEFAULT_CAPITAL_SOURCES = [
           i.value = c.SoTienVay;
         } else {
           const sug = getCurrentCycleInterestSuggestion(c);
-          i.value = sug.amount || calculateContractInterest(c).laiConNo || 0;
+          i.value = (sug.amount || 0) + Number(c.laiConNo || 0);
           // init period fields if present
           const tuEl = document.getElementById('pm-KyLaiTu');
           const denEl = document.getElementById('pm-KyLaiDen');
@@ -3858,7 +3593,10 @@ const DEFAULT_CAPITAL_SOURCES = [
       const tuEl = document.getElementById('pm-KyLaiTu');
       const denEl = document.getElementById('pm-KyLaiDen');
       const typeSel = document.querySelector('#payment-modal select[name="LoaiThanhToan"]') || document.querySelector('select[name="LoaiThanhToan"]');
-      if (!typeSel || typeSel.value !== 'Trả lãi') return;
+      if (!typeSel || typeSel.value !== 'Trả lãi') {
+        if (window.updatePaymentDifference) window.updatePaymentDifference();
+        return;
+      }
 
       let kyTu = (tuEl && tuEl.value) ? parseDateToISO(tuEl.value) : (c.NgayBatDauTinhLai || c.NgayVay);
       let kyDen = (denEl && denEl.value) ? parseDateToISO(denEl.value) : (c.NgayDaoHan || kyTu);
@@ -3875,6 +3613,8 @@ const DEFAULT_CAPITAL_SOURCES = [
       const priorCount = (st.payments || []).filter(p => p.MaHopDong === maHD && p.LoaiThanhToan === 'Trả lãi').length;
       const isFirst = priorCount === 0;
       const amt = calculateInterestForPeriod(c, kyTu, kyDen, isFirst);
+      const debt = Number(c.laiConNo || 0);
+      const totalDue = amt + debt;
 
       const daily = (c.SoTienVay / 1000000) * (c.LaiNgayTrenTrieu || 0);
       const std30 = Math.round(daily * 30);
@@ -3882,7 +3622,12 @@ const DEFAULT_CAPITAL_SOURCES = [
       const diffDays = actualDays - 30;
       const diffLai = Math.round(daily * diffDays);
 
-      preview.innerHTML = `Lãi kỳ: <b>${formatVND(amt)}</b> (ngày: ${actualDays}${diffDays!==0 ? ' , chênh '+diffDays+'d = '+formatVND(diffLai) : ''})`;
+      if (debt > 0) {
+        preview.innerHTML = `Lãi kỳ này: <b>${formatVND(amt)}</b> + Nợ cũ: <b>${formatVND(debt)}</b> = <b>${formatVND(totalDue)}</b> (ngày: ${actualDays}${diffDays!==0 ? ' , chênh '+diffDays+'d = '+formatVND(diffLai) : ''})`;
+      } else {
+        preview.innerHTML = `Lãi kỳ: <b>${formatVND(amt)}</b> (ngày: ${actualDays}${diffDays!==0 ? ' , chênh '+diffDays+'d = '+formatVND(diffLai) : ''})`;
+      }
+
       if (noteEl) {
         const ngayTL = c.NgayBatDauTinhLai || c.NgayVay;
         if (isFirst && calculateStandardDays(c.NgayVay, ngayTL) > 0) {
@@ -3893,10 +3638,64 @@ const DEFAULT_CAPITAL_SOURCES = [
       }
       if (forceSetAmount || (document.getElementById('pm-SoTienTra') && !document.getElementById('pm-SoTienTra').value)) {
         const si = document.getElementById('pm-SoTienTra');
-        if (si) si.value = amt;
+        if (si) si.value = totalDue;
       }
+      if (window.updatePaymentDifference) window.updatePaymentDifference();
     }
     window.updatePaymentInterestPreview = updatePaymentInterestPreview;
+
+    function updatePaymentDifference() {
+      const maHD = document.getElementById('pm-MaHopDong') ? document.getElementById('pm-MaHopDong').value : '';
+      const warningEl = document.getElementById('pm-underpaid-warning');
+      const overpaidEl = document.getElementById('pm-overpaid-container');
+      const overpaidAmtEl = document.getElementById('pm-overpaid-amount');
+      if (!maHD) {
+        if (warningEl) warningEl.classList.add('hidden');
+        if (overpaidEl) overpaidEl.classList.add('hidden');
+        return;
+      }
+      const st = window.state || state;
+      const c = (st.contracts || []).find(x => x.MaHopDong === maHD);
+      if (!c) return;
+
+      const typeSel = document.querySelector('#payment-modal select[name="LoaiThanhToan"]') || document.querySelector('select[name="LoaiThanhToan"]');
+      const isLai = !typeSel || typeSel.value === 'Trả lãi';
+
+      let soTienPhaiDong = 0;
+      if (isLai) {
+        const tuEl = document.getElementById('pm-KyLaiTu');
+        const denEl = document.getElementById('pm-KyLaiDen');
+        let kyTu = (tuEl && tuEl.value) ? parseDateToISO(tuEl.value) : (c.NgayBatDauTinhLai || c.NgayVay);
+        let kyDen = (denEl && denEl.value) ? parseDateToISO(denEl.value) : (c.NgayDaoHan || kyTu);
+        const priorCount = (st.payments || []).filter(p => p.MaHopDong === maHD && p.LoaiThanhToan === 'Trả lãi').length;
+        const isFirst = priorCount === 0;
+        soTienPhaiDong = calculateInterestForPeriod(c, kyTu, kyDen, isFirst) + Number(c.laiConNo || 0);
+      } else {
+        const calc = calculateContractInterest(c);
+        soTienPhaiDong = (calc.duNoGocHienTai || c.SoTienVay) + Number(c.laiConNo || 0);
+      }
+
+      const soTienThuThucTe = Number(document.getElementById('pm-SoTienTra').value || 0);
+      const soTienGiamTru = Number(document.getElementById('pm-TienKhuyenMai') ? document.getElementById('pm-TienKhuyenMai').value : 0);
+      
+      const chenhLech = soTienThuThucTe + soTienGiamTru - soTienPhaiDong;
+
+      if (chenhLech < 0) {
+        if (warningEl) {
+          warningEl.innerHTML = `⚠️ Khách còn thiếu <b>${formatVND(Math.abs(chenhLech))}</b> VNĐ. Số tiền này sẽ được lưu vào công nợ để thu bổ sung sau.`;
+          warningEl.classList.remove('hidden');
+        }
+        if (overpaidEl) overpaidEl.classList.add('hidden');
+      } else if (chenhLech > 0) {
+        if (overpaidAmtEl) overpaidAmtEl.textContent = formatVND(chenhLech);
+        if (overpaidEl) overpaidEl.classList.remove('hidden');
+        if (warningEl) warningEl.classList.add('hidden');
+      } else {
+        if (warningEl) warningEl.classList.add('hidden');
+        if (overpaidEl) overpaidEl.classList.add('hidden');
+      }
+    }
+    window.updatePaymentDifference = updatePaymentDifference;
 
     function handleExportJSON() {
       if (!state.password) {
@@ -3995,6 +3794,7 @@ const DEFAULT_CAPITAL_SOURCES = [
         const tienLaiThuc = statsObj.loiNhuanRongThucTe;
         const laiDoiTac = statsObj.laiDoiTac || 0;
         const tongLaiConThucTe = tienLaiThuc - laiDoiTac - tongRutLai;
+        const laiThucConLai = tienLaiThuc - statsObj.soLaiDoiTacDaRut - statsObj.soLaiOwnerDaRut;
 
         // Calendar computation for due dates - placed early so it can be referenced in the dashboard HTML string higher up
         const calSection = (() => {
@@ -4073,7 +3873,7 @@ const DEFAULT_CAPITAL_SOURCES = [
             }
 
             const calHTML = `
-              <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+              <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 lg:min-h-[380px] flex flex-col justify-between">
                 <div class="flex items-center justify-between gap-3 mb-2.5">
                   <span class="font-bold text-slate-800 text-xs uppercase flex items-center gap-1.5">
                     <span>📅</span> Lịch đáo hạn tháng
@@ -4240,6 +4040,7 @@ const DEFAULT_CAPITAL_SOURCES = [
                   <div class="font-extrabold text-emerald-700">${formatVND(w.soLaiCanDong)}</div>
                   ${w.isFirstCycle ? `<div class="text-[9px] text-indigo-600"> (kỳ đầu tiên, đã tính ngày dư nếu có)</div>` : ''}
                 </div>
+                ${Number(w.c.laiConNo || 0) > 0 ? `<div class="col-span-2 text-rose-650 font-bold text-[11px] mt-0.5">⚠️ Nợ lãi cũ: <span class="font-black text-rose-700">${formatVND(w.c.laiConNo)}</span> đ</div>` : ''}
                 <div class="col-span-2 mt-1">
                   <div class="text-[10px] text-slate-500">Hình thức</div>
                   <div>${loaiHDSummary}</div>
@@ -4298,45 +4099,102 @@ const DEFAULT_CAPITAL_SOURCES = [
               </div>
             </div>
 
-            <!-- Card 2: Chi Phí Lãi Nguồn (Moved up from Tầng 2) -->
+            <!-- Card 2: Chi Phí Lãi Nguồn & Trạng Thái Thanh Toán -->
             <div class="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
               <div>
-                <div class="text-[10px] font-bold text-slate-505 uppercase tracking-wider flex items-center gap-1.5">
-                  ${getIconSVG('creditCard', 'w-3.5 h-3.5 text-rose-500')}
-                  <span>Chi Phí Lãi Nguồn</span>
+                <div class="flex justify-between items-center mb-1.5 pb-1 border-b border-slate-100">
+                  <div class="text-[10px] font-bold text-slate-505 uppercase tracking-wider flex items-center gap-1.5">
+                    ${getIconSVG('creditCard', 'w-3.5 h-3.5 text-rose-500')}
+                    <span>Chi Phí Lãi Nguồn</span>
+                  </div>
+                  <div class="flex gap-1">
+                    <button onclick="window.openSourcePaidModal && window.openSourcePaidModal()" class="bg-rose-600 hover:bg-rose-700 text-white font-bold text-[8px] px-1.5 py-0.5 rounded transition active:scale-95 shadow-sm">
+                      Trả
+                    </button>
+                    <button onclick="window.openSourcePaidHistoryModal && window.openSourcePaidHistoryModal()" class="bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold text-[8px] px-1.5 py-0.5 rounded transition active:scale-95 border border-slate-200">
+                      Lịch sử
+                    </button>
+                  </div>
                 </div>
-                <div class="mt-2 text-lg font-black text-rose-600 tracking-tight">${formatVND(chiPhiNguon1Thang)}</div>
-              </div>
-              <div class="text-[10px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 font-medium">
-                Phí trả nguồn / tháng
+                <div class="text-base font-black text-rose-600 tracking-tight">${formatVND(chiPhiNguon1Thang)}</div>
+                
+                <div class="mt-2 pt-2 border-t border-slate-100 flex flex-col gap-1 text-[10px] font-semibold text-slate-500">
+                  <div class="flex justify-between items-center">
+                    <span>Đã trả thực tế:</span>
+                    <div class="flex items-center gap-1">
+                      <span class="${statsObj.tongLaiDaTraNguonThucTe > 0 ? 'text-emerald-600 font-extrabold' : 'text-rose-600 font-extrabold'}">${formatVND(statsObj.tongLaiDaTraNguonThucTe)}</span>
+                      <span class="text-[9px]">${statsObj.tongLaiDaTraNguonThucTe <= 0 ? '⚠' : '✓'}</span>
+                    </div>
+                  </div>
+                  <div class="flex justify-between text-[9px] text-slate-400">
+                    <span>Cần trả dự tính:</span>
+                    <span>${formatVND(statsObj.laiDaTraNguonDuyTinh)}</span>
+                  </div>
+                  <div class="flex justify-between font-bold border-t border-slate-50 pt-1">
+                    <span>Còn nợ nguồn:</span>
+                    <span class="text-rose-600 font-extrabold">${formatVND(Math.max(0, (statsObj.laiDaTraNguonDuyTinh || 0) - (statsObj.tongLaiDaTraNguonThucTe || 0)))}</span>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <!-- Card 3: Dư Nợ Cho Vay -->
-            <div class="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
-              <div>
-                <div class="text-[10px] font-bold text-slate-505 uppercase tracking-wider flex items-center gap-1.5">
-                  ${getIconSVG('fileText', 'w-3.5 h-3.5 text-emerald-500')}
-                  <span>Dư Nợ Cho Vay</span>
+            <!-- Card 3: Dư Nợ Cho Vay & Lãi Thực Đã Thu -->
+            <div class="flex flex-col gap-4">
+              <!-- Dư Nợ Cho Vay -->
+              <div class="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between flex-1">
+                <div>
+                  <div class="text-[10px] font-bold text-slate-505 uppercase tracking-wider flex items-center gap-1.5">
+                    ${getIconSVG('fileText', 'w-3.5 h-3.5 text-emerald-500')}
+                    <span>Dư Nợ Cho Vay</span>
+                  </div>
+                  <div class="mt-2 text-lg font-black text-slate-900 tracking-tight">${formatVND(statsObj.tongVonChoVay)}</div>
                 </div>
-                <div class="mt-2 text-lg font-black text-slate-900 tracking-tight">${formatVND(statsObj.tongVonChoVay)}</div>
+                <div class="text-[10px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 font-medium">
+                  Gốc thực tế ngoài thị trường
+                </div>
               </div>
-              <div class="text-[10px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 font-medium">
-                Gốc thực tế ngoài thị trường
+              <!-- Lãi Thực Đã Thu -->
+              <div class="bg-emerald-600 text-white border border-emerald-700 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between flex-1">
+                <div>
+                  <div class="text-[10px] font-bold text-emerald-100 uppercase tracking-wider flex items-center gap-1.5">
+                    ${getIconSVG('dollar', 'w-3.5 h-3.5 text-emerald-200')}
+                    <span>Lãi Thực Đã Thu</span>
+                  </div>
+                  <div class="mt-2 text-lg font-black tracking-tight text-white">${formatVND(tienLaiThuc)}</div>
+                </div>
+                <div class="text-[10px] text-emerald-100 mt-2 pt-1.5 border-t border-emerald-550 font-medium">
+                  Tổng thu trừ chi phí nguồn
+                </div>
               </div>
             </div>
 
-            <!-- Card 4: Lãi Dự Kiến / Tháng -->
-            <div class="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
-              <div>
-                <div class="text-[10px] font-bold text-slate-505 uppercase tracking-wider flex items-center gap-1.5">
-                  ${getIconSVG('trendingUp', 'w-3.5 h-3.5 text-indigo-500')}
-                  <span>Lãi Dự Kiến / Tháng</span>
+            <!-- Card 4: Lãi Dự Kiến / Tháng & Lãi Thực Còn Lại -->
+            <div class="flex flex-col gap-4">
+              <!-- Lãi Dự Kiến / Tháng -->
+              <div class="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between flex-1">
+                <div>
+                  <div class="text-[10px] font-bold text-slate-505 uppercase tracking-wider flex items-center gap-1.5">
+                    ${getIconSVG('trendingUp', 'w-3.5 h-3.5 text-indigo-500')}
+                    <span>Lãi Dự Kiến / Tháng</span>
+                  </div>
+                  <div class="mt-2 text-lg font-black text-slate-900 tracking-tight">${formatVND(laiThu1ThangHopDong)}</div>
                 </div>
-                <div class="mt-2 text-lg font-black text-slate-900 tracking-tight">${formatVND(laiThu1ThangHopDong)}</div>
+                <div class="text-[10px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 font-medium">
+                  Dòng lãi dự thu 30 ngày
+                </div>
               </div>
-              <div class="text-[10px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 font-medium">
-                Dòng lãi dự thu 30 ngày
+              <!-- Lãi Thực Còn Lại -->
+              <div class="bg-white border border-emerald-200 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between flex-1">
+                <div>
+                  <div class="text-[10px] font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1.5">
+                    ${getIconSVG('trendingUp', 'w-3.5 h-3.5 text-emerald-600')}
+                    <span>Lãi Thực Còn Lại</span>
+                  </div>
+                  <div class="mt-2 text-lg font-black text-emerald-700 tracking-tight">${formatVND(laiThucConLai)}</div>
+                </div>
+                <div class="text-[10px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 font-medium">
+                  Lãi thực trừ tổng lãi đã rút
+                </div>
               </div>
             </div>
 
@@ -4371,204 +4229,139 @@ const DEFAULT_CAPITAL_SOURCES = [
             </div>
           </div>
 
-          <!-- TẦNG 2: HỆ THỐNG QUẢN LÝ LÃI & LỢI NHUẬN RÒNG -->
-          <div class="grid grid-cols-1 lg:grid-cols-6 gap-4 mb-6">
+          <!-- TẦNG 2: HỆ THỐNG QUẢN LÝ LÃI & LỢI NHUẬN RÒNG (Grid 50/50) -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
             
-            <!-- Cột Trái (lg:col-span-2): Các ô chỉ số lãi (Tổng lãi đã thu, Lãi đã trả nguồn vốn, Lãi Thực Đã Thu) -->
-            <div class="lg:col-span-2 flex flex-col gap-4">
-              <!-- Ô 1: Tổng Lãi Đã Thu -->
-              <div class="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between flex-1 min-h-[90px]">
+            <!-- Bảng QUẢN LÝ LÃI ĐỐI TÁC -->
+            <div class="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row justify-between gap-6">
+              <!-- Cột trái card: Thông tin lãi -->
+              <div class="flex-1 flex flex-col justify-between">
                 <div>
-                  <div class="text-[10px] font-bold text-slate-505 uppercase tracking-wider flex items-center gap-1.5">
-                    ${getIconSVG('dollar', 'w-3.5 h-3.5 text-indigo-500')}
-                    <span>Tổng Lãi Đã Thu</span>
-                  </div>
-                  <div class="mt-2 text-base font-black text-slate-900 tracking-tight">${formatVND(statsObj.tongLaiThucThu)}</div>
-                </div>
-                <div class="text-[10px] text-amber-600 mt-2 pt-1 border-t border-slate-100 font-medium">
-                  Đã trừ điều chỉnh lãi kỳ đầu: -${formatVND(statsObj.laiKyDauDieuChinh || 3962500)}
-                </div>
-              </div>
-
-              <!-- Ô 2: Lãi đã trả ngân nguồn vốn (chỉ tính khi bấm "Đã thanh toán") -->
-              <div class="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between flex-1 min-h-[110px]">
-                <div>
-                  <div class="flex justify-between items-center mb-1">
-                    <div class="text-[10px] font-bold text-slate-505 uppercase tracking-wider flex items-center gap-1.5">
-                      ${getIconSVG('creditCard', 'w-3.5 h-3.5 text-rose-500')}
-                      <span>Lãi đã trả ngân nguồn vốn</span>
-                    </div>
-                    <div class="flex gap-1">
-                      <button onclick="window.openSourcePaidModal && window.openSourcePaidModal()" class="bg-rose-600 hover:bg-rose-700 text-white font-bold text-[9px] px-2.5 py-1 rounded-lg transition active:scale-95 shadow-sm">
-                        Đã thanh toán
-                      </button>
-                      <button onclick="window.openSourcePaidHistoryModal && window.openSourcePaidHistoryModal()" class="bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold text-[9px] px-2 py-0.5 rounded-lg transition active:scale-95 border border-slate-200">
-                        Lịch sử
-                      </button>
-                    </div>
-                  </div>
-                  <div class="mt-1.5 text-base font-black ${statsObj.tongLaiDaTraNguonThucTe > 0 ? 'text-emerald-600' : 'text-rose-600'} tracking-tight">${formatVND(statsObj.tongLaiDaTraNguonThucTe)}</div>
-                  ${statsObj.tongLaiDaTraNguonThucTe <= 0
-                    ? `<div class="mt-1 text-[10px] font-bold text-rose-500">⚠ Chưa thanh toán — vẫn còn là nợ nguồn vốn</div>`
-                    : `<div class="mt-1 text-[10px] font-semibold text-emerald-600">✓ Đã ghi nhận thanh toán thực tế</div>`}
-                </div>
-                <div class="text-[10px] text-slate-400 mt-2 pt-1 border-t border-slate-100 font-semibold flex flex-col gap-0.5">
-                  <div class="flex justify-between">
-                    <span>Cần trả dự tính (mùng 1 → nay):</span>
-                    <span class="text-slate-600">${formatVND(statsObj.laiDaTraNguonDuyTinh)}</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span>Còn nợ nguồn vốn:</span>
-                    <span class="text-rose-600 font-extrabold">${formatVND(Math.max(0, (statsObj.laiDaTraNguonDuyTinh || 0) - (statsObj.tongLaiDaTraNguonThucTe || 0)))}</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Ô 3: Lãi Thực Đã Thu -->
-              <div class="bg-emerald-600 text-white border border-emerald-700 p-4 rounded-2xl shadow-sm hover:shadow-md transition flex flex-col justify-between flex-1 min-h-[90px]">
-                <div>
-                  <div class="text-[10px] font-bold text-emerald-100 uppercase tracking-wider flex items-center gap-1.5">
-                    ${getIconSVG('dollar', 'w-3.5 h-3.5 text-emerald-200')}
-                    <span>Lãi Thực Đã Thu</span>
-                  </div>
-                  <div class="mt-2 text-base font-black tracking-tight text-white">${formatVND(tienLaiThuc)}</div>
-                </div>
-                <div class="text-[10px] text-emerald-100 mt-2 pt-1.5 border-t border-emerald-550 font-medium">
-                  Tổng thu trừ chi phí nguồn
-                </div>
-              </div>
-            </div>
-
-            <!-- Cột Phải (lg:col-span-4): Hai bảng quản lý rút lãi (Đối tác & Thực tế/Chủ sở hữu) -->
-            <div class="lg:col-span-4 flex flex-col gap-4">
-              
-              <!-- Bảng QUẢN LÝ LÃI ĐỐI TÁC -->
-              <div class="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row items-center justify-between gap-4 flex-1">
-                <div class="flex-1 w-full">
-                  <div class="flex items-center justify-between border-b pb-2 mb-2">
-                    <span class="font-extrabold text-xs text-amber-700 uppercase flex items-center gap-1.5">
+                  <div class="flex items-center justify-between border-b pb-2 mb-3">
+                    <span class="font-extrabold text-sm text-amber-700 uppercase flex items-center gap-1.5">
                       <span>🤝</span> QUẢN LÝ LÃI ĐỐI TÁC (${statsObj.phanTramChiaLaiDoiTac ?? 50}%)
                     </span>
-                    <span class="bg-amber-50 text-amber-700 font-bold px-2 py-0.5 rounded-lg text-[9px] border border-amber-100">Chia sẻ đối tác</span>
+                    <span class="bg-amber-50 text-amber-700 font-bold px-2 py-0.5 rounded-lg text-[10px] border border-amber-100">Chia sẻ</span>
                   </div>
-                  
-                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
-                    <p class="text-[10px] text-slate-450 leading-relaxed font-semibold">
-                      Trích <strong>${statsObj.phanTramChiaLaiDoiTac ?? 50}% Lợi Nhuận Ròng</strong> cho đối tác đầu tư.
-                    </p>
-                    
-                    <!-- Progress bar cho % đã rút -->
-                    ${(() => {
-                      const pct = statsObj.laiDoiTac > 0 ? Math.min(100, Math.round((statsObj.soLaiDoiTacDaRut / statsObj.laiDoiTac) * 100)) : 0;
-                      return `
-                        <div>
-                          <div class="flex justify-between text-[9px] font-bold mb-1">
-                            <span class="text-slate-400 uppercase">Rút lãi progress (${pct}%)</span>
-                            <span class="text-slate-700">${formatVND(statsObj.soLaiDoiTacDaRut)} / ${formatVND(statsObj.laiDoiTac)}</span>
-                          </div>
-                          <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden border">
-                            <div class="h-1.5 bg-amber-500 rounded-full transition-all" style="width: ${pct}%"></div>
-                          </div>
-                        </div>
-                      `;
-                    })()}
-                  </div>
+                  <p class="text-xs text-slate-450 leading-relaxed font-semibold">
+                    Trích <strong>${statsObj.phanTramChiaLaiDoiTac ?? 50}% Lợi Nhuận Ròng</strong> cho đối tác đầu tư.
+                  </p>
                 </div>
-
-                <!-- Nút hành động của Đối tác -->
-                <div class="flex flex-col justify-between items-end border-t md:border-t-0 md:border-l border-slate-100 pt-3 md:pt-0 md:pl-4 w-full md:w-auto h-full min-w-[150px]">
-                  <div class="text-[10px] text-right font-semibold text-slate-500 w-full mb-2">
-                    Khả dụng: <span class="text-slate-950 font-extrabold text-sm">${formatVND(statsObj.soLaiDoiTacConLai)}</span>
-                  </div>
-                  <div class="flex flex-wrap gap-1.5 justify-end w-full">
-                    <button onclick="(() => { const src = state.capitalSources.find(s => s.MaNguon === 'GOP_VON' || s.MaNguon === 'TIEN_DOI_TAC' || (s.TenNguon || '').toLowerCase().includes('đối tác')) || state.capitalSources[0]; if (src) window.openCapitalSourceModal(src.MaNguon); })()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[9px] px-2.5 py-1.5 rounded-lg transition active:scale-95">
-                      Cấu hình
-                    </button>
-                    <button onclick="window.openPartnerWithdrawModal && window.openPartnerWithdrawModal('RutRaNgoai')" class="bg-slate-900 hover:bg-slate-850 text-white font-bold text-[9px] px-2.5 py-1.5 rounded-lg transition active:scale-95">
-                      Rút
-                    </button>
-                    <button onclick="window.openPartnerWithdrawModal && window.openPartnerWithdrawModal('NapVaoHeThong')" class="bg-slate-900 hover:bg-slate-850 text-white font-bold text-[9px] px-2.5 py-1.5 rounded-lg transition active:scale-95">
-                      Nạp
-                    </button>
-                    <button onclick="window.openPartnerHistoryModal && window.openPartnerHistoryModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-[9px] px-2.5 py-1.5 rounded-lg transition active:scale-95 border border-slate-200">
-                      Lịch sử
-                    </button>
-                  </div>
+                <div class="mt-4">
+                  <span class="text-xs text-slate-500 font-bold">Lãi khả dụng:</span>
+                  <div class="text-xl font-black text-amber-700 tracking-tight mt-0.5">${formatVND(statsObj.soLaiDoiTacConLai)}</div>
                 </div>
               </div>
 
-              <!-- Bảng QUẢN LÝ LÃI THỰC TẾ -->
-              <div class="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row items-center justify-between gap-4 flex-1">
-                <div class="flex-1 w-full">
-                  <div class="flex items-center justify-between border-b pb-2 mb-2">
-                    <span class="font-extrabold text-xs text-indigo-700 uppercase flex items-center gap-1.5">
+              <!-- Cột phải card: Progress & Nút hành động -->
+              <div class="flex-1 flex flex-col justify-between items-stretch md:items-end min-w-[200px] gap-4">
+                <!-- Progress bar -->
+                ${(() => {
+                  const pct = statsObj.laiDoiTac > 0 ? Math.min(100, Math.round((statsObj.soLaiDoiTacDaRut / statsObj.laiDoiTac) * 100)) : 0;
+                  return `
+                    <div class="w-full">
+                      <div class="flex justify-between text-[10px] font-bold mb-1.5">
+                        <span class="text-slate-400 uppercase">Rút lãi progress (${pct}%)</span>
+                        <span class="text-slate-700 font-extrabold">${formatVND(statsObj.soLaiDoiTacDaRut)} / ${formatVND(statsObj.laiDoiTac)}</span>
+                      </div>
+                      <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden border">
+                        <div class="h-2 bg-amber-500 rounded-full transition-all" style="width: ${pct}%"></div>
+                      </div>
+                    </div>
+                  `;
+                })()}
+
+                <!-- Nút hành động ở góc phải dưới -->
+                <div class="flex flex-wrap gap-2 justify-end mt-auto">
+                  <button onclick="(() => { const src = state.capitalSources.find(s => s.MaNguon === 'GOP_VON' || s.MaNguon === 'TIEN_DOI_TAC' || (s.TenNguon || '').toLowerCase().includes('đối tác')) || state.capitalSources[0]; if (src) window.openCapitalSourceModal(src.MaNguon); })()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[10px] px-3 py-2 rounded-xl transition active:scale-95">
+                    Cấu hình
+                  </button>
+                  <button onclick="window.openPartnerWithdrawModal && window.openPartnerWithdrawModal('RutRaNgoai')" class="bg-slate-900 hover:bg-slate-850 text-white font-bold text-[10px] px-3 py-2 rounded-xl transition active:scale-95">
+                    Rút
+                  </button>
+                  <button onclick="window.openPartnerWithdrawModal && window.openPartnerWithdrawModal('NapVaoHeThong')" class="bg-slate-900 hover:bg-slate-850 text-white font-bold text-[10px] px-3 py-2 rounded-xl transition active:scale-95">
+                    Nạp
+                  </button>
+                  <button onclick="window.openPartnerHistoryModal && window.openPartnerHistoryModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-[10px] px-3 py-2 rounded-xl transition active:scale-95 border border-slate-200">
+                    Lịch sử
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bảng QUẢN LÝ LÃI THỰC TẾ -->
+            <div class="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row justify-between gap-6">
+              <!-- Cột trái card: Thông tin lãi -->
+              <div class="flex-1 flex flex-col justify-between">
+                <div>
+                  <div class="flex items-center justify-between border-b pb-2 mb-3">
+                    <span class="font-extrabold text-sm text-indigo-700 uppercase flex items-center gap-1.5">
                       <span>💼</span> QUẢN LÝ LÃI THỰC TẾ
                     </span>
-                    <span class="bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded-lg text-[9px] border border-indigo-100">Chủ sở hữu</span>
+                    <span class="bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded-lg text-[10px] border border-indigo-100">Chủ sở hữu</span>
                   </div>
-                  
-                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
-                    <p class="text-[10px] text-slate-450 leading-relaxed font-semibold">
-                      Phần Lãi Thực Tế còn lại của hệ thống sau khi trích chia lãi đối tác.
-                    </p>
-                    
-                    <!-- Progress bar cho % đã rút -->
-                    ${(() => {
-                      const pctOwner = statsObj.laiThucTe > 0 ? Math.min(100, Math.round((statsObj.soLaiOwnerDaRut / statsObj.laiThucTe) * 100)) : 0;
-                      return `
-                        <div>
-                          <div class="flex justify-between text-[9px] font-bold mb-1">
-                            <span class="text-slate-400 uppercase">Rút lãi progress (${pctOwner}%)</span>
-                            <span class="text-slate-700">${formatVND(statsObj.soLaiOwnerDaRut)} / ${formatVND(statsObj.laiThucTe)}</span>
-                          </div>
-                          <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden border">
-                            <div class="h-1.5 bg-indigo-500 rounded-full transition-all" style="width: ${pctOwner}%"></div>
-                          </div>
-                        </div>
-                      `;
-                    })()}
-                  </div>
+                  <p class="text-xs text-slate-450 leading-relaxed font-semibold">
+                    Phần Lãi Thực Tế còn lại của hệ thống sau khi trích chia lãi đối tác.
+                  </p>
                 </div>
-
-                <!-- Nút hành động của Chủ sở hữu -->
-                <div class="flex flex-col justify-between items-end border-t md:border-t-0 md:border-l border-slate-100 pt-3 md:pt-0 md:pl-4 w-full md:w-auto h-full min-w-[150px]">
-                  <div class="text-[10px] text-right font-semibold text-slate-500 w-full mb-2">
-                    Khả dụng: <span class="text-slate-950 font-extrabold text-sm">${formatVND(statsObj.soLaiOwnerConLai)}</span>
-                  </div>
-                  <div class="flex flex-wrap gap-1.5 justify-end w-full">
-                    <button onclick="window.openOwnerWithdrawModal && window.openOwnerWithdrawModal('RutKhoiHeThong')" class="bg-slate-900 hover:bg-slate-850 text-white font-bold text-[9px] px-2.5 py-1.5 rounded-lg transition active:scale-95">
-                      Rút
-                    </button>
-                    <button onclick="window.openOwnerWithdrawModal && window.openOwnerWithdrawModal('NapVonTuCo')" class="bg-slate-900 hover:bg-slate-850 text-white font-bold text-[9px] px-2.5 py-1.5 rounded-lg transition active:scale-95">
-                      Nạp
-                    </button>
-                    <button onclick="window.openOwnerHistoryModal && window.openOwnerHistoryModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-[9px] px-2.5 py-1.5 rounded-lg transition active:scale-95 border border-slate-200">
-                      Lịch sử
-                    </button>
-                  </div>
+                <div class="mt-4">
+                  <span class="text-xs text-slate-500 font-bold">Lãi khả dụng:</span>
+                  <div class="text-xl font-black text-indigo-700 tracking-tight mt-0.5">${formatVND(statsObj.soLaiOwnerConLai)}</div>
                 </div>
               </div>
 
+              <!-- Cột phải card: Progress & Nút hành động -->
+              <div class="flex-1 flex flex-col justify-between items-stretch md:items-end min-w-[200px] gap-4">
+                <!-- Progress bar -->
+                ${(() => {
+                  const pctOwner = statsObj.laiThucTe > 0 ? Math.min(100, Math.round((statsObj.soLaiOwnerDaRut / statsObj.laiThucTe) * 100)) : 0;
+                  return `
+                    <div class="w-full">
+                      <div class="flex justify-between text-[10px] font-bold mb-1.5">
+                        <span class="text-slate-400 uppercase">Rút lãi progress (${pctOwner}%)</span>
+                        <span class="text-slate-700 font-extrabold">${formatVND(statsObj.soLaiOwnerDaRut)} / ${formatVND(statsObj.laiThucTe)}</span>
+                      </div>
+                      <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden border">
+                        <div class="h-2 bg-indigo-500 rounded-full transition-all" style="width: ${pctOwner}%"></div>
+                      </div>
+                    </div>
+                  `;
+                })()}
+
+                <!-- Nút hành động ở góc phải dưới -->
+                <div class="flex flex-wrap gap-2 justify-end mt-auto">
+                  <button onclick="window.openOwnerWithdrawModal && window.openOwnerWithdrawModal('RutKhoiHeThong')" class="bg-slate-900 hover:bg-slate-850 text-white font-bold text-[10px] px-3 py-2 rounded-xl transition active:scale-95">
+                    Rút
+                  </button>
+                  <button onclick="window.openOwnerWithdrawModal && window.openOwnerWithdrawModal('NapVonTuCo')" class="bg-slate-900 hover:bg-slate-850 text-white font-bold text-[10px] px-3 py-2 rounded-xl transition active:scale-95">
+                    Nạp
+                  </button>
+                  <button onclick="window.openOwnerHistoryModal && window.openOwnerHistoryModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-[10px] px-3 py-2 rounded-xl transition active:scale-95 border border-slate-200">
+                    Lịch sử
+                  </button>
+                </div>
+              </div>
             </div>
+
           </div>
 
           <!-- THANH HÀNH ĐỘNG NHANH -->
           <div class="mb-6 bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
             <h4 class="font-bold text-slate-700 text-xs uppercase mb-3 flex items-center gap-1">Hành động nhanh</h4>
             <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
-              <button onclick="window.openContractModal && window.openContractModal()" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-sm">
+              <button onclick="window.openContractModal && window.openContractModal()" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-sm">
                 ➕ Tạo hợp đồng mới
               </button>
-              <button onclick="window.openPartnerWithdrawModal && window.openPartnerWithdrawModal('RutRaNgoai')" class="text-xs bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-sm">
+              <button onclick="window.openPartnerWithdrawModal && window.openPartnerWithdrawModal('RutRaNgoai')" class="text-xs bg-amber-500 hover:bg-amber-600 text-white py-2.5 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-sm">
                 💸 Rút lãi đối tác
               </button>
-              <button onclick="window.openPaymentModal && window.openPaymentModal()" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-sm">
+              <button onclick="window.openPaymentModal && window.openPaymentModal()" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-sm">
                 💰 Đóng lãi / Tất toán
               </button>
-              <button onclick="window.openExportExcelModal && window.openExportExcelModal('dashboard')" class="text-xs bg-slate-700 hover:bg-slate-800 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-sm">
+              <button onclick="window.openExportExcelModal && window.openExportExcelModal('dashboard')" class="text-xs bg-slate-700 hover:bg-slate-800 text-white py-2.5 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-sm">
                 📊 Export Excel
               </button>
-              <button onclick="if(window.state){ window.state.activeTab='payments'; if(window.renderApp) window.renderApp(); }" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 border border-slate-200 shadow-sm col-span-2 sm:col-span-1">
+              <button onclick="if(window.state){ window.state.activeTab='payments'; if(window.renderApp) window.renderApp(); }" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 border border-slate-200 shadow-sm col-span-2 sm:col-span-1">
                 📜 Lịch sử giao dịch
               </button>
             </div>
@@ -4589,19 +4382,19 @@ const DEFAULT_CAPITAL_SOURCES = [
             <!-- CỘT PHẢI (6/12): KHU VỰC TRỰC QUAN BIỂU ĐỒ CHUYÊN NGHIỆP -->
             <div class="lg:col-span-6 space-y-6">
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 lg:min-h-[380px] flex flex-col justify-between">
                   <h4 class="font-extrabold text-slate-800 text-xs uppercase mb-3 flex items-center gap-1.5">
                     <span>📊</span> Cơ Cấu Dư Nợ Theo Nguồn Vốn
                   </h4>
-                  <div class="h-44 relative">
+                  <div class="flex-1 relative min-h-[220px]">
                     <canvas id="chart-capital-allocation"></canvas>
                   </div>
                 </div>
-                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 lg:min-h-[380px] flex flex-col justify-between">
                   <h4 class="font-extrabold text-slate-800 text-xs uppercase mb-3 flex items-center gap-1.5">
                     <span>📈</span> Doanh Thu Lãi Đã Thu Theo Tháng
                   </h4>
-                  <div class="h-44 relative">
+                  <div class="flex-1 relative min-h-[220px]">
                     <canvas id="chart-monthly-revenue"></canvas>
                   </div>
                 </div>
@@ -4933,7 +4726,16 @@ const DEFAULT_CAPITAL_SOURCES = [
               <td class="p-2 text-right text-xs font-semibold text-slate-750">${contract.LoaiHopDong === 'LaiCoDinhNgay' ? `<span class="text-slate-400 font-normal">Cố định: ${formatVND(contract.SoLaiCoDinh || 0)}</span>` : `${formatVND(contract.LaiNgayTrenTrieu || 0)} đ`}</td>
               <td class="p-2">${timeline}</td>
               <td class="p-2 text-right font-bold text-emerald-700 text-xs">${formatVND(calc.laiThangChuan30Ngay)}${extraTag}</td>
-              <td class="p-2 text-right font-extrabold text-rose-600 text-xs">${formatVND(calc.laiConNo)}</td>
+              <td class="p-2 text-right text-xs">
+                ${calc.laiConNo > 0
+                  ? `<div class="text-rose-600 font-extrabold">${Number(calc.laiNoCu || 0) > 0 ? '⚠️ ' : ''}${formatVND(calc.laiConNo)}</div>
+                     ${Number(calc.laiNoCu || 0) > 0
+                       ? `<div class="text-[9px] text-rose-500 font-semibold leading-tight">Nợ cũ ${formatVND(calc.laiNoCu)} + PS ${formatVND(calc.laiPhatSinh || 0)}</div>`
+                       : (calc.fullMonths > 0 || calc.remDays > 0
+                         ? `<div class="text-[9px] text-slate-400 font-medium">${calc.fullMonths || 0}th + ${calc.remDays || 0}d</div>`
+                         : '')}`
+                  : `<span class="text-slate-400 font-medium">0 đ</span>`}
+              </td>
               <td class="p-2 text-center"><button onclick="window.openPaymentModal && window.openPaymentModal('${contract.MaHopDong}')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold">Thu</button><button onclick="window.openContractModal && window.openContractModal('${contract.MaHopDong}')" class="text-indigo-600 hover:text-indigo-800 font-semibold ml-1 text-xs">Sửa</button><button onclick="window.handleDeleteContract && window.handleDeleteContract('${contract.MaHopDong}')" class="text-rose-600 hover:text-rose-800 font-semibold ml-1 text-xs">Xóa</button></td>
             </tr>`;
         });
@@ -4943,9 +4745,33 @@ const DEFAULT_CAPITAL_SOURCES = [
         let rows = '';
         state.payments.forEach(pay => {
           const kyInfo = (pay.KyLaiTu || pay.KyLaiDen) ? `<div class="text-[9px] text-indigo-600">Kỳ: ${formatDate(pay.KyLaiTu||'')}→${formatDate(pay.KyLaiDen||pay.NgayThanhToan)}</div>` : '';
-          rows += `<tr class="border-t hover:bg-slate-50"><td class="p-4 font-bold text-slate-700">${pay.MaHopDong}</td><td class="p-4 text-slate-500">${formatDate(pay.NgayThanhToan)}${kyInfo}</td><td class="p-4 font-extrabold text-slate-900 text-right">${formatVND(pay.SoTienTra)}</td><td class="p-4">${pay.TrangThaiThu === 'NhanVienGiu' ? `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">👤 ${pay.NguoiThuHo} giữ</span>` : '<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700">🏢 Đã nộp quỹ</span>'}</td><td class="p-4 text-center"><button onclick="window.handleDeletePayment && window.handleDeletePayment('${pay.MaThanhToan}')" class="text-rose-600 hover:text-rose-800 font-semibold">Xóa</button></td></tr>`;
+          const contract = state.contracts.find(c => c.MaHopDong === pay.MaHopDong);
+          const customer = contract ? state.customers.find(cu => cu.MaKH === contract.MaKH) : null;
+          const khachHangText = customer ? `${customer.TenKhachHang} (${customer.MaKH})` : 'N/A';
+          rows += `<tr class="border-t hover:bg-slate-50">` +
+            `<td class="p-4 font-bold text-slate-700">${pay.MaHopDong}</td>` +
+            `<td class="p-4 font-medium text-slate-750">${khachHangText}</td>` +
+            `<td class="p-4 text-slate-500">${formatDate(pay.NgayThanhToan)}${kyInfo}</td>` +
+            `<td class="p-4 font-extrabold text-slate-900 text-right">${formatVND(pay.SoTienTra)}</td>` +
+            `<td class="p-4">${pay.TrangThaiThu === 'NhanVienGiu' ? `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">👤 ${pay.NguoiThuHo} giữ</span>` : '<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700">🏢 Đã nộp quỹ</span>'}</td>` +
+            `<td class="p-4 text-center"><button onclick="window.handleDeletePayment && window.handleDeletePayment('${pay.MaThanhToan}')" class="text-rose-600 hover:text-rose-800 font-semibold">Xóa</button></td>` +
+            `</tr>`;
         });
-        mainContentHTML = `<div class="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm"><table class="w-full text-sm text-left"><thead><tr class="bg-slate-50 border-b text-slate-400 font-bold"><th class="p-4 uppercase">Mã HĐ</th><th class="p-4 uppercase">Ngày nộp / Kỳ lãi</th><th class="p-4 text-right uppercase">Số tiền đóng</th><th class="p-4 uppercase">Người cầm tiền</th><th class="p-4 text-center uppercase">Thao tác</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+        mainContentHTML = `<div class="bg-white rounded-2xl border border-slate-100 overflow-x-auto shadow-sm">` +
+          `<table class="w-full text-sm text-left">` +
+          `<thead>` +
+          `<tr class="bg-slate-50 border-b text-slate-400 font-bold">` +
+          `<th class="p-4 uppercase">Mã HĐ</th>` +
+          `<th class="p-4 uppercase">Khách Hàng</th>` +
+          `<th class="p-4 uppercase">Ngày nộp / Kỳ lãi</th>` +
+          `<th class="p-4 text-right uppercase">Số tiền đóng</th>` +
+          `<th class="p-4 uppercase">Người cầm tiền</th>` +
+          `<th class="p-4 text-center uppercase">Thao tác</th>` +
+          `</tr>` +
+          `</thead>` +
+          `<tbody>${rows}</tbody>` +
+          `</table>` +
+          `</div>`;
       }
       else if (state.activeTab === 'settings') {
         mainContentHTML = `
@@ -5010,46 +4836,6 @@ const DEFAULT_CAPITAL_SOURCES = [
               </div>
             </div>
 
-            <div class="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
-              <h3 class="font-bold text-slate-900 text-lg mb-2">📘 Đồng bộ OneDrive</h3>
-              <p class="text-slate-500 text-sm mb-3">Sao lưu mã hóa lên OneDrive (Microsoft). Tự động đồng bộ khi vào app / thoát app giống Google Drive. File: <code class="text-[10px] bg-slate-100 px-1 rounded">QuanLyVonCV/QuanLyVayTien_Backup.enc.json</code></p>
-
-              <div class="mb-4">
-                <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Azure Application (client) ID</label>
-                <input type="text" id="onedrive-client-id" class="w-full border p-2 text-xs rounded-xl focus:outline-none focus:border-sky-500 font-mono text-[11px]" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value="${localStorage.getItem('loan_onedrive_client_id') || ''}" onchange="localStorage.setItem('loan_onedrive_client_id', this.value.trim()); if(window.initOneDriveAuth) window.initOneDriveAuth();" />
-                <p class="text-[9px] text-slate-400 mt-1 leading-relaxed">
-                  Đăng ký app tại <b>portal.azure.com</b> → App registrations → New registration → loại <b>SPA</b>.
-                  Thêm Redirect URI: <code class="bg-sky-50 text-sky-800 px-1 rounded">${typeof getOneDriveRedirectUri === 'function' ? getOneDriveRedirectUri() : (location.origin + location.pathname)}</code>
-                  + quyền Graph: <b>Files.ReadWrite</b>, <b>User.Read</b>, <b>offline_access</b>.
-                </p>
-              </div>
-
-              ${isOneDriveConnected() ? `
-              <div class="mb-4 p-3 rounded-xl border ${isAutoOneDriveSyncEnabled() ? 'bg-sky-50 border-sky-200' : 'bg-slate-50 border-slate-200'}">
-                <label class="flex items-start gap-2 cursor-pointer">
-                  <input type="checkbox" class="mt-0.5 w-4 h-4 accent-sky-600" ${isAutoOneDriveSyncEnabled() ? 'checked' : ''} onchange="window.setAutoOneDriveSync && window.setAutoOneDriveSync(this.checked)" />
-                  <span class="text-xs font-bold text-slate-800 leading-snug">Tự động đồng bộ OneDrive khi vào app &amp; sao lưu khi thoát app</span>
-                </label>
-                <div class="mt-2 text-[10px] text-slate-500 space-y-0.5 pl-6">
-                  <div>• Lần đồng bộ OneDrive: <b class="text-slate-700">${formatSyncTime(localStorage.getItem('loan_last_onedrive_sync'))}</b></div>
-                  <div>• Thay đổi local gần nhất: <b class="text-slate-700">${formatSyncTime(state.lastLocalChangeAt || localStorage.getItem('loan_last_local_change'))}</b></div>
-                </div>
-              </div>
-              ` : ''}
-
-              <div class="flex flex-wrap gap-2">
-                ${isOneDriveConnected()
-                  ? `
-                  <span class="w-full block text-xs font-semibold text-sky-700 mb-1">✓ Đã kết nối OneDrive${isAutoOneDriveSyncEnabled() ? ' · Auto-sync BẬT' : ' · Auto-sync TẮT'}</span>
-                  <button onclick="window.autoSyncOnAppEnter && window.autoSyncOnAppEnter()" class="bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs px-4 py-2.5 rounded-xl">🔄 Đồng bộ ngay</button>
-                  <button onclick="window.backupToOneDrive && window.backupToOneDrive()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-4 py-2.5 rounded-xl">☁️ Sao lưu OneDrive</button>
-                  <button onclick="window.restoreFromOneDrive && window.restoreFromOneDrive()" class="bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2.5 rounded-xl">📥 Khôi phục OneDrive</button>
-                  <button onclick="window.disconnectOneDrive && window.disconnectOneDrive()" class="text-rose-600 hover:bg-rose-50 font-bold border border-rose-200 px-3 py-2.5 rounded-xl text-xs">Ngắt kết nối</button>
-                  `
-                  : `<button onclick="window.connectOneDrive && window.connectOneDrive()" class="bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs px-4 py-2.5 rounded-xl">🔗 Kết nối OneDrive</button>`
-                }
-              </div>
-            </div>
 
             <div class="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm col-span-1 md:col-span-3">
               <h3 class="font-bold text-rose-700 text-lg mb-2">♻️ Reset & Tối ưu nguồn vốn</h3>
@@ -6300,17 +6086,34 @@ const DEFAULT_CAPITAL_SOURCES = [
                 
                 <div>
                   <label class="block text-xs font-bold text-slate-500 mb-1">Số tiền thu thực tế (VNĐ)</label>
-                  <input type="number" id="pm-SoTienTra" name="SoTienTra" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none font-extrabold text-lg bg-slate-50" placeholder="Số tiền mặt nhận được..." required />
+                  <input type="number" id="pm-SoTienTra" name="SoTienTra" oninput="window.updatePaymentDifference && window.updatePaymentDifference()" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none font-extrabold text-lg bg-slate-50" placeholder="Số tiền mặt nhận được..." required />
                 </div>
                 
                 <div id="pm-discount-container">
                   <label class="block text-xs font-bold text-slate-500 mb-1">Số tiền giảm trừ / Khuyến mại (VNĐ)</label>
-                  <input type="number" name="TienKhuyenMai" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none text-rose-600 font-bold" placeholder="Tiền ưu đãi khuyến mại..." value="0" />
+                  <input type="number" id="pm-TienKhuyenMai" name="TienKhuyenMai" oninput="window.updatePaymentDifference && window.updatePaymentDifference()" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none text-rose-600 font-bold" placeholder="Tiền ưu đãi khuyến mại..." value="0" />
+                </div>
+
+                <div id="pm-underpaid-warning" class="hidden text-amber-600 font-bold text-xs p-3 bg-amber-50 border border-amber-200 rounded-xl leading-relaxed">
                 </div>
                 
                 <div>
                   <label class="block text-xs font-bold text-slate-500 mb-1">Ngày thu tiền thực tế</label>
                   <input type="date" name="NgayThanhToan" value="${new Date().toISOString().split('T')[0]}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none" required />
+                </div>
+
+                <div id="pm-overpaid-container" class="hidden border border-emerald-250 bg-emerald-50/60 p-3 rounded-xl text-xs space-y-2">
+                  <div class="font-bold text-emerald-700 leading-relaxed">Hệ thống ghi nhận thu thừa <span id="pm-overpaid-amount" class="font-black text-sm"></span> VNĐ. Vui lòng chọn phương án xử lý:</div>
+                  <div class="space-y-2 font-semibold text-slate-700">
+                    <label class="flex items-start gap-2 cursor-pointer">
+                      <input type="radio" name="luaChonThuThua" value="normal" class="mt-0.5 w-4 h-4 accent-emerald-600" onchange="window.updatePaymentDifference && window.updatePaymentDifference()" />
+                      <span>Lựa chọn 1: Ghi nhận toàn bộ vào doanh thu lãi kỳ này như bình thường.</span>
+                    </label>
+                    <label class="flex items-start gap-2 cursor-pointer">
+                      <input type="radio" name="luaChonThuThua" value="transfer_next_month" class="mt-0.5 w-4 h-4 accent-emerald-600" onchange="window.updatePaymentDifference && window.updatePaymentDifference()" />
+                      <span>Lựa chọn 2: Chuyển số dư thừa sang khấu trừ vào tiền lãi của tháng sau.</span>
+                    </label>
+                  </div>
                 </div>
                 
                 <div>
@@ -6921,13 +6724,7 @@ const DEFAULT_CAPITAL_SOURCES = [
     window.autoBackupOnAppLeave = autoBackupOnAppLeave;
     window.autoBackupAllConnected = autoBackupAllConnected;
     window.isAutoGDriveSyncEnabled = isAutoGDriveSyncEnabled;
-    window.initOneDriveAuth = initOneDriveAuth;
-    window.connectOneDrive = connectOneDrive;
-    window.disconnectOneDrive = disconnectOneDrive;
-    window.backupToOneDrive = backupToOneDrive;
-    window.restoreFromOneDrive = restoreFromOneDrive;
-    window.isAutoOneDriveSyncEnabled = isAutoOneDriveSyncEnabled;
-    window.isOneDriveConnected = isOneDriveConnected;
+
 
     // KHỞI ĐỘNG CHẠY NGAY - BẢN CHUẨN OFFLINE (bỏ cloud/login hoàn toàn)
     try {
