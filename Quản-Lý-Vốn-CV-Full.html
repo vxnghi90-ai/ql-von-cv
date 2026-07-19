@@ -2044,18 +2044,26 @@ const DEFAULT_CAPITAL_SOURCES = [
       return Number((contract && contract.SoLaiCoDinh) || 0);
     }
 
-    /** Cộng N tháng lịch vào ngày YYYY-MM-DD (giữ cùng ngày; tháng thiếu ngày → cuối tháng) */
+    /**
+     * Cộng N tháng lịch (cùng ngày): 12/07 → 12/08, 1/7 → 1/8.
+     * KHÔNG dùng +30 ngày lịch (12/7+30d=11/8 — sai).
+     * Lãi tiền vẫn tính theo 30 ngày chuẩn; chỉ ngày đến hạn theo lịch tháng.
+     * Tháng thiếu ngày (31→tháng 2): lùi về cuối tháng.
+     */
     function addMonthsToYMD(ymdStr, months) {
-      const iso = toInputDate(ymdStr) || ymdStr;
-      if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return '';
-      const parts = iso.slice(0, 10).split('-').map(Number);
-      let y = parts[0], m = parts[1] - 1, d = parts[2];
-      m += Number(months) || 0;
-      y += Math.floor(m / 12);
-      m = ((m % 12) + 12) % 12;
-      const maxDays = new Date(y, m + 1, 0).getDate();
-      if (d > maxDays) d = maxDays;
-      return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const iso = toInputDate(ymdStr) || (ymdStr ? String(ymdStr).slice(0, 10) : '');
+      if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '';
+      const parts = iso.split('-').map(Number);
+      if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return '';
+      let y = parts[0];
+      let m0 = parts[1] - 1; // 0-11
+      const day = parts[2];
+      const total = m0 + (Number(months) || 0);
+      y += Math.floor(total / 12);
+      m0 = ((total % 12) + 12) % 12;
+      const maxDays = new Date(y, m0 + 1, 0).getDate();
+      const d = day > maxDays ? maxDays : day;
+      return `${y}-${String(m0 + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     }
 
     // Tính "Ngày vay sau đáo" = Ngày vay (hoặc ngày tính lãi gốc) + số tháng = số lần đã đóng lãi
@@ -2071,8 +2079,9 @@ const DEFAULT_CAPITAL_SOURCES = [
     }
 
     /**
-     * Đến hạn = Ngày vay sau đáo + 1 tháng
-     * VD: sau đáo 01/06 → đến hạn 01/07 (KHÔNG lấy ngày thanh toán gần nhất)
+     * Đến hạn = Ngày vay sau đáo + 1 tháng lịch (cùng ngày)
+     * VD: sau đáo 12/07 → đến hạn 12/08 (KHÔNG phải 11/08 = +30 ngày)
+     *     sau đáo 01/06 → đến hạn 01/07
      */
     function calculateNgayDenHan(contract) {
       const sauDao = calculateNgayVaySauDao(contract);
@@ -3332,15 +3341,23 @@ const DEFAULT_CAPITAL_SOURCES = [
         }
       }
 
-      // Check if user manually changed NgayDaoHan
+      // Đến hạn chuẩn = (Ngày tính lãi / Ngày vay) + 1 tháng lịch (12/7 → 12/8, không +30 ngày)
+      const autoDenHan = addMonthsToYMD(contractData.NgayBatDauTinhLai || contractData.NgayVay, 1);
+      const formDenHan = toInputDate(contractData.NgayDaoHan) || contractData.NgayDaoHan;
       if (oldC) {
-        if (contractData.NgayDaoHan !== oldC.NgayDaoHan) {
+        // Chỉ đánh dấu manual nếu user sửa khác công thức tự động
+        if (formDenHan && autoDenHan && formDenHan !== autoDenHan && formDenHan !== (toInputDate(oldC.NgayDaoHan) || oldC.NgayDaoHan)) {
           contractData.NgayDaoHanManual = true;
-        } else if (oldC.NgayDaoHanManual) {
+        } else if (oldC.NgayDaoHanManual && formDenHan && autoDenHan && formDenHan !== autoDenHan) {
           contractData.NgayDaoHanManual = true;
+        } else {
+          contractData.NgayDaoHanManual = false;
+          if (autoDenHan) contractData.NgayDaoHan = autoDenHan;
         }
       } else {
-        contractData.NgayDaoHanManual = true;
+        // HĐ mới: luôn dùng +1 tháng lịch, không khóa manual
+        contractData.NgayDaoHanManual = false;
+        if (autoDenHan) contractData.NgayDaoHan = autoDenHan;
       }
 
       executeSave('contracts', contractData.MaHopDong, contractData, () => {
@@ -5110,7 +5127,7 @@ const DEFAULT_CAPITAL_SOURCES = [
               <td class="p-2 text-slate-600 text-xs">${formatDate(contract.NgayVay)}</td>
               <td class="p-2 text-slate-600 text-xs">${formatDate(calc.ngayDongLaiGanNhat)}</td>
               <td class="p-2 text-indigo-700 text-xs font-extrabold bg-indigo-50/40">${formatDate(calc.ngayVaySauDaoStr)}</td>
-              <td class="p-2 text-xs font-bold">${formatDate((contract.TrangThai === 'Đang vay' && !contract.NgayDaoHanManual) ? (calculateNgayDenHan(contract) || contract.NgayDaoHan) : contract.NgayDaoHan)}${warningTag}</td>
+              <td class="p-2 text-xs font-bold">${formatDate((contract.TrangThai === 'Đang vay') ? ((contract.NgayDaoHanManual ? toInputDate(contract.NgayDaoHan) : null) || calculateNgayDenHan(contract) || contract.NgayDaoHan) : contract.NgayDaoHan)}${warningTag}</td>
               <td class="p-2 text-right font-extrabold text-slate-900 text-xs">${formatVND(calc.duNoGocHienTai)}</td>
               <td class="p-2 text-right text-xs font-semibold text-slate-750">${contract.LoaiHopDong === 'LaiCoDinhNgay' ? `<span class="text-slate-400 font-normal">Cố định: ${formatVND(contract.SoLaiCoDinh || 0)}</span>` : `${formatVND(contract.LaiNgayTrenTrieu || 0)} đ`}</td>
               <td class="p-2">${timeline}</td>
@@ -7114,10 +7131,9 @@ const DEFAULT_CAPITAL_SOURCES = [
         }
       }
 
-      // NgayDaoHan = +30 days
-      const d = new Date(hd.NgayVay);
-      d.setDate(d.getDate() + 30);
-      hd.NgayDaoHan = d.toISOString().split('T')[0];
+      // Đến hạn = Ngày vay + 1 tháng lịch (12/7 → 12/8), không +30 ngày
+      hd.NgayDaoHan = addMonthsToYMD(hd.NgayVay, 1) || hd.NgayVay;
+      hd.NgayDaoHanManual = false;
       hd.LichSuNguon = buildLichSuNguonFromAllocation(qAlloc.length ? qAlloc : [{MaNguon: hd.MaNguon, SoTien: hd.SoTienVay}], hd.NgayVay);
       if (qAlloc.length) hd.MaNguon = qAlloc[0].MaNguon;
       state.contracts.push(hd);
