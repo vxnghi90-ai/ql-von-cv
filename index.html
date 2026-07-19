@@ -2254,17 +2254,29 @@ const DEFAULT_CAPITAL_SOURCES = [
       let laiNoCu = Math.max(0, Math.round(Number(contract.laiConNo || 0)));
       let laiConNo = 0;
       let sauDaoResult = { fullMonths: 0, remDays: 0, ngayVaySauDaoStr: ngayTinhLaiStr, extraDays: 0, extraLai: 0 };
+      let showExtraDays = extraDays;
+      let showExtraLai = extraLai;
 
       if (isConLai || isSettledFull) {
-        // Đã trả gốc / tất toán: không phát sinh thêm lãi — chỉ theo dõi nợ lãi còn lại (đóng băng)
+        // Đã trả gốc / tất toán xong: không còn dư nợ để tính lãi tháng
+        // → Lãi 1 tháng (30d) = 0; chỉ còn theo dõi Lãi còn nợ (đóng băng)
         laiPhatSinh = 0;
         laiConNo = isSettledFull ? 0 : laiNoCu;
+        laiThangChuan30Ngay = 0;
+        showExtraDays = 0;
+        showExtraLai = 0;
         sauDaoResult.ngayVaySauDaoStr = contract.NgayTraGoc || contract.NgayTatToan || ngayTinhLaiStr;
       } else {
         sauDaoResult = calculateInterestFromNgayVaySauDao(contract, endCalStr);
         // Lãi còn nợ = lãi phát sinh từ Ngày vay sau đáo → nay + nợ lãi cũ (đóng thiếu)
         laiPhatSinh = Math.max(0, Math.round(Number(sauDaoResult.laiConNo || 0)));
         laiConNo = laiPhatSinh + laiNoCu;
+        // Không còn gốc thì không hiển thị lãi tháng chuẩn
+        if (duNoGocHienTai <= 0) {
+          laiThangChuan30Ngay = 0;
+          showExtraDays = 0;
+          showExtraLai = 0;
+        }
       }
       const tongLaiPhatSinh = laiConNo;
       const ngayVaySauDaoStr = sauDaoResult.ngayVaySauDaoStr || ngayTinhLaiStr;
@@ -2307,8 +2319,8 @@ const DEFAULT_CAPITAL_SOURCES = [
         laiThangChuan30Ngay,
         ngayDongLaiGanNhat,
         ngayVaySauDaoStr,
-        extraDays,
-        extraLai,
+        extraDays: showExtraDays,
+        extraLai: showExtraLai,
         fullMonths: sauDaoResult.fullMonths,
         remDays: sauDaoResult.remDays
       };
@@ -5021,7 +5033,7 @@ const DEFAULT_CAPITAL_SOURCES = [
               <td class="p-2 text-right font-extrabold text-slate-900 text-xs">${formatVND(calc.duNoGocHienTai)}</td>
               <td class="p-2 text-right text-xs font-semibold text-slate-750">${contract.LoaiHopDong === 'LaiCoDinhNgay' ? `<span class="text-slate-400 font-normal">Cố định: ${formatVND(contract.SoLaiCoDinh || 0)}</span>` : `${formatVND(contract.LaiNgayTrenTrieu || 0)} đ`}</td>
               <td class="p-2">${timeline}</td>
-              <td class="p-2 text-right font-bold text-emerald-700 text-xs">${formatVND(calc.laiThangChuan30Ngay)}${extraTag}</td>
+              <td class="p-2 text-right font-bold text-xs ${calc.laiThangChuan30Ngay > 0 ? 'text-emerald-700' : 'text-slate-400'}">${formatVND(calc.laiThangChuan30Ngay)}${extraTag}</td>
               <td class="p-2 text-right text-xs">
                 ${calc.laiConNo > 0
                   ? `<div class="text-rose-600 font-extrabold">${Number(calc.laiNoCu || 0) > 0 ? '⚠️ ' : ''}${formatVND(calc.laiConNo)}</div>
