@@ -4198,26 +4198,53 @@ const DEFAULT_CAPITAL_SOURCES = [
             };
             const todayYM = todayYMD().substring(0, 7);
 
-            // Lịch đóng lãi định kỳ: chỉ HĐ "Đang vay"
-            // HĐ "Còn lãi" (đã trả gốc) không đóng theo tháng → không đưa vào ô lịch;
-            // chỉ hiện ghi chú thu nốt lãi cho đến khi tất toán xong ở Quản Lý Hợp Đồng.
-            // Mốc: Ngày bắt đầu tính lãi (hoặc ngày vay)
-            // Lần đóng lãi ĐẦU = mốc + 1 tháng → mới hiện trên lịch
-            // VD: 12/07 bắt đầu vay/tính lãi → lần đầu đóng 12/08 (tháng 7 KHÔNG hiện; 12/08, 12/09…)
+            // Lịch đóng lãi định kỳ theo TỪNG THÁNG:
+            // - "HĐ đang vay trong tháng" = đã giải ngân trong/trước tháng & chưa trả gốc trước tháng đó
+            // - "HĐ đến hạn đóng lãi" = đang vay trong tháng & đã tới kỳ đóng lãi (mốc + 1 tháng)
+            // - So sánh tháng trước: thêm / bớt HĐ
+            // HĐ "Còn lãi" hiện tại chỉ ghi chú ngoài lịch (không đóng định kỳ).
             const getInterestBaseIso = (c) =>
               toInputDate(c.NgayBatDauTinhLai) || toInputDate(c.NgayVay) || '';
             const getFirstDueIso = (c) => {
               const base = getInterestBaseIso(c);
               return base ? addMonthsToYMD(base, 1) : '';
             };
+            // Ngày kết thúc vay gốc (không còn đóng lãi định kỳ sau tháng này)
+            const getPrincipalEndIso = (c) => {
+              if (!c) return '';
+              if (c.TrangThai === 'Đang vay') return '';
+              if (c.TrangThai === 'Còn lãi' || c.LaiDongBang) {
+                return toInputDate(c.NgayTraGoc) || '';
+              }
+              if (c.TrangThai === 'Đã tất toán') {
+                return toInputDate(c.NgayTraGoc) || toInputDate(c.NgayTatToan) || '';
+              }
+              return toInputDate(c.NgayTraGoc) || toInputDate(c.NgayTatToan) || '';
+            };
+            // Còn gốc / đang vay trong tháng ym (YYYY-MM)
+            const isBorrowingInMonth = (c, ym) => {
+              const vayIso = toInputDate(c.NgayVay) || '';
+              if (!vayIso) return false;
+              if (vayIso.substring(0, 7) > ym) return false; // chưa giải ngân
+              const endIso = getPrincipalEndIso(c);
+              if (endIso && endIso.substring(0, 7) < ym) return false; // đã trả gốc từ tháng trước
+              return true;
+            };
+            // Có kỳ đóng lãi định kỳ trong tháng ym
+            const isDueInMonth = (c, ym) => {
+              if (!isBorrowingInMonth(c, ym)) return false;
+              // Đã trả gốc trong đúng tháng ym → không tính lịch định kỳ nữa (chuyển Còn lãi)
+              const endIso = getPrincipalEndIso(c);
+              if (endIso && endIso.substring(0, 7) === ym) return false;
+              const firstDue = getFirstDueIso(c);
+              if (!firstDue) return false;
+              return firstDue.substring(0, 7) <= ym;
+            };
 
-            // Chỉ HĐ đang vay còn lịch đóng lãi định kỳ
-            const periodicContracts = state.contracts.filter(c =>
-              c.TrangThai === 'Đang vay' && getFirstDueIso(c)
-            );
+            const allContracts = state.contracts || [];
 
             // HĐ đã trả gốc, còn lãi chưa thu — theo dõi ngoài lịch định kỳ
-            const conLaiContracts = state.contracts
+            const conLaiContracts = allContracts
               .filter(c => c.TrangThai === 'Còn lãi' || c.LaiDongBang)
               .map(c => {
                 const calc = calculateContractInterest(c);
@@ -4232,11 +4259,13 @@ const DEFAULT_CAPITAL_SOURCES = [
 
             const conLaiTotal = conLaiContracts.reduce((s, x) => s + (x.laiCon || 0), 0);
 
-            // Dải tháng: từ tháng ĐÓNG LÃI ĐẦU sớm nhất → hiện tại + 2
+            // Dải tháng: từ tháng giải ngân / đóng lãi đầu sớm nhất → hiện tại + 2
             let minYM = todayYM;
-            periodicContracts.forEach(c => {
-              const iso = getFirstDueIso(c);
-              if (iso && iso.substring(0, 7) < minYM) minYM = iso.substring(0, 7);
+            allContracts.forEach(c => {
+              const vayIso = toInputDate(c.NgayVay) || '';
+              const dueIso = getFirstDueIso(c);
+              if (vayIso && vayIso.substring(0, 7) < minYM) minYM = vayIso.substring(0, 7);
+              if (dueIso && dueIso.substring(0, 7) < minYM) minYM = dueIso.substring(0, 7);
             });
             let sortedMonths = [];
             let cur = expandMonths(minYM, -1);
@@ -4256,37 +4285,55 @@ const DEFAULT_CAPITAL_SOURCES = [
             const currentIdx = sortedMonths.indexOf(selectedMonth);
             const prevM = currentIdx > 0 ? sortedMonths[currentIdx - 1] : null;
             const nextM = currentIdx < sortedMonths.length - 1 ? sortedMonths[currentIdx + 1] : null;
+            // Tháng trước theo lịch (luôn selected − 1) để so sánh thêm/bớt
+            const prevCalMonth = expandMonths(selectedMonth, -1);
 
             const [yStr, mStr] = selectedMonth.split('-');
             const calYear = parseInt(yStr, 10);
             const calMonth = parseInt(mStr, 10) - 1; // 0-based
             const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
 
-            // Map ngày → HĐ định kỳ: ngày đóng lãi = cùng ngày mốc tính lãi, từ THÁNG ĐÓNG LẦN ĐẦU trở đi
+            // Tập HĐ theo tháng (đang vay / đến hạn)
+            const borrowingThis = allContracts.filter(c => isBorrowingInMonth(c, selectedMonth));
+            const dueThis = allContracts.filter(c => isDueInMonth(c, selectedMonth));
+            const borrowingPrev = allContracts.filter(c => isBorrowingInMonth(c, prevCalMonth));
+            const duePrev = allContracts.filter(c => isDueInMonth(c, prevCalMonth));
+
+            const setOf = (list) => new Set(list.map(c => c.MaHopDong));
+            const borrowSet = setOf(borrowingThis);
+            const borrowPrevSet = setOf(borrowingPrev);
+            const dueSet = setOf(dueThis);
+            const duePrevSet = setOf(duePrev);
+
+            const addedBorrow = [...borrowSet].filter(m => !borrowPrevSet.has(m));
+            const removedBorrow = [...borrowPrevSet].filter(m => !borrowSet.has(m));
+            const addedDue = [...dueSet].filter(m => !duePrevSet.has(m));
+            const removedDue = [...duePrevSet].filter(m => !dueSet.has(m));
+
+            const monthHdCount = dueThis.length;
+            const monthBorrowCount = borrowingThis.length;
+            const prevLabel = `${prevCalMonth.split('-')[1]}/${prevCalMonth.split('-')[0]}`;
+
+            // Map ngày → HĐ đến hạn trong tháng đang xem
             const dueMap = {};
-            let monthHdCount = 0;
-            periodicContracts.forEach(c => {
+            dueThis.forEach(c => {
               const baseIso = getInterestBaseIso(c);
-              const firstDueIso = getFirstDueIso(c);
-              if (!baseIso || !firstDueIso) return;
-
+              if (!baseIso) return;
               const baseD = parseInt(baseIso.split('-')[2], 10);
-              const firstDueYM = firstDueIso.substring(0, 7);
-              // Chỉ hiện từ tháng có lần đóng lãi đầu (mốc + 1 tháng), không hiện tháng bắt đầu vay
-              if (selectedMonth < firstDueYM) return;
-
               const dayInMonth = Math.min(baseD, daysInMonth);
               const key = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(dayInMonth).padStart(2, '0')}`;
 
               if (!dueMap[key]) dueMap[key] = { count: 0, totalVay: 0, totalLai: 0, maList: [] };
               const calc = calculateContractInterest(c);
-              const sug = getCurrentCycleInterestSuggestion(c);
-              const lai = sug.amount || Math.round((Number(c.SoTienVay || 0) / 1000000) * (c.LaiNgayTrenTrieu || 0) * 30);
+              const stillActive = c.TrangThai === 'Đang vay';
+              const sug = stillActive ? getCurrentCycleInterestSuggestion(c) : null;
+              const lai = (sug && sug.amount) || Math.round((Number(c.SoTienVay || 0) / 1000000) * (c.LaiNgayTrenTrieu || 0) * 30);
               dueMap[key].count++;
-              dueMap[key].totalVay += (calc.duNoGocHienTai || c.SoTienVay || 0);
+              dueMap[key].totalVay += stillActive
+                ? (calc.duNoGocHienTai || c.SoTienVay || 0)
+                : (Number(c.SoTienVay || 0));
               dueMap[key].totalLai += lai;
               dueMap[key].maList.push(c.MaHopDong);
-              monthHdCount++;
             });
 
             const firstDow = new Date(calYear, calMonth, 1).getDay();
@@ -4343,14 +4390,37 @@ const DEFAULT_CAPITAL_SOURCES = [
                 </div>`;
             }
 
+            // So sánh với tháng trước (thêm / bớt HĐ + chênh đến hạn / đang vay)
+            const dueDelta = monthHdCount - duePrev.length;
+            const borrowDelta = monthBorrowCount - borrowingPrev.length;
+            const changeTip = [
+              addedBorrow.length ? `Thêm đang vay: ${addedBorrow.join(', ')}` : '',
+              removedBorrow.length ? `Bớt đang vay: ${removedBorrow.join(', ')}` : '',
+              addedDue.length ? `Thêm đến hạn: ${addedDue.join(', ')}` : '',
+              removedDue.length ? `Bớt đến hạn: ${removedDue.join(', ')}` : ''
+            ].filter(Boolean).join(' | ') || 'Không đổi so với tháng trước';
+
+            const changeRowHtml = `
+              <div class="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] normal-case" title="${changeTip.replace(/"/g, '&quot;')}">
+                <span class="text-slate-400 font-semibold">So với tháng ${prevLabel}:</span>
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">+${addedBorrow.length} thêm HĐ</span>
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 font-bold">−${removedBorrow.length} bớt HĐ</span>
+                <span class="text-slate-300">·</span>
+                <span class="text-slate-500 font-medium">đến hạn <b class="${dueDelta > 0 ? 'text-emerald-600' : (dueDelta < 0 ? 'text-rose-600' : 'text-slate-500')}">${dueDelta > 0 ? '+' : ''}${dueDelta}</b></span>
+                <span class="text-slate-500 font-medium">đang vay <b class="${borrowDelta > 0 ? 'text-emerald-600' : (borrowDelta < 0 ? 'text-rose-600' : 'text-slate-500')}">${borrowDelta > 0 ? '+' : ''}${borrowDelta}</b></span>
+              </div>`;
+
             return `
               <div id="dashboard-calendar-section" class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 lg:min-h-[380px] flex flex-col justify-between">
-                <div class="flex items-center justify-between gap-3 mb-2.5">
-                  <span class="font-bold text-slate-800 text-xs uppercase flex items-center gap-1.5 flex-wrap">
-                    <span>📅</span> Lịch đóng lãi tháng
-                    <span class="normal-case font-semibold text-slate-500">(${monthHdCount} HĐ đến hạn đóng lãi trong tháng / ${periodicContracts.length} HĐ đang vay)</span>
-                  </span>
-                  <div class="flex items-center gap-1">
+                <div class="flex items-start justify-between gap-3 mb-2.5">
+                  <div class="min-w-0">
+                    <div class="font-bold text-slate-800 text-xs uppercase flex items-center gap-1.5 flex-wrap">
+                      <span>📅</span> Lịch đóng lãi tháng
+                      <span class="normal-case font-semibold text-slate-500">(${monthHdCount} HĐ đến hạn đóng lãi trong tháng / ${monthBorrowCount} HĐ đang vay)</span>
+                    </div>
+                    ${changeRowHtml}
+                  </div>
+                  <div class="flex items-center gap-1 shrink-0">
                     ${prevM ? `<button type="button" onclick="window.changeDashboardCalMonth && window.changeDashboardCalMonth('${prevM}')" class="p-1 hover:bg-slate-100 rounded text-[10px] font-bold border shadow-xs transition">◀</button>` : ''}
                     <span class="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-bold tracking-wider">${mStr}/${yStr}</span>
                     ${nextM ? `<button type="button" onclick="window.changeDashboardCalMonth && window.changeDashboardCalMonth('${nextM}')" class="p-1 hover:bg-slate-100 rounded text-[10px] font-bold border shadow-xs transition">▶</button>` : ''}
@@ -4361,9 +4431,9 @@ const DEFAULT_CAPITAL_SOURCES = [
                   ${grid}
                 </div>
                 <div class="text-[9px] text-slate-400 mt-2 font-medium leading-relaxed">
-                  Lịch <b>ngày đến hạn đóng lãi</b> = ngày bắt đầu tính lãi <b>+ 1 tháng</b>, rồi lặp mỗi tháng.
-                  VD: bắt đầu 12/07 → lần đầu <b>12/08</b> (tháng 7 không có), sau đó 12/09, 12/10…
-                  Chỉ HĐ <b>Đang vay</b>. Ô: số HĐ / vốn / lãi. Hover xem mã HĐ.
+                  Số liệu <b>theo đúng tháng đang xem</b>. Đến hạn = ngày bắt đầu tính lãi <b>+ 1 tháng</b> (VD: vay 12/07 → lần đầu 12/08).
+                  HĐ mới giải ngân trong tháng có thể chưa đến hạn. Hover chip so sánh để xem mã HĐ thêm/bớt.
+                  Ô: số HĐ / vốn / lãi.
                 </div>
               </div>`;
         })();
