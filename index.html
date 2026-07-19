@@ -4237,17 +4237,28 @@ const DEFAULT_CAPITAL_SOURCES = [
           );
         }
 
-        const countOverdue = allActiveContracts.filter(x => x.st.type === 'overdue' || x.daysDiff < 0).length;
-        const countDue = allActiveContracts.filter(x => (x.daysDiff >= 0 && x.daysDiff <= 3) || x.st.type === 'due' || x.st.type === 'soon').length;
-        const countActive = allActiveContracts.filter(x => x.daysDiff > 3 && x.st.type !== 'overdue').length;
+        // Còn lãi luôn ưu tiên trong tab "cần xử lý"
+        const isConLaiItem = (x) => x.st && x.st.type === 'con_lai';
+        allActiveContracts.sort((a, b) => {
+          if (isConLaiItem(a) && !isConLaiItem(b)) return -1;
+          if (!isConLaiItem(a) && isConLaiItem(b)) return 1;
+          if (isConLaiItem(a) && isConLaiItem(b)) return (b.soLaiCanDong || 0) - (a.soLaiCanDong || 0);
+          return (a.daysDiff || 0) - (b.daysDiff || 0);
+        });
+
+        const countConLai = allActiveContracts.filter(isConLaiItem).length;
+        const countOverdue = allActiveContracts.filter(x => !isConLaiItem(x) && (x.st.type === 'overdue' || x.daysDiff < 0)).length + countConLai;
+        const countDue = allActiveContracts.filter(x => !isConLaiItem(x) && ((x.daysDiff >= 0 && x.daysDiff <= 3) || x.st.type === 'due' || x.st.type === 'soon')).length;
+        const countActive = allActiveContracts.filter(x => !isConLaiItem(x) && x.daysDiff > 3 && x.st.type !== 'overdue').length;
 
         let filteredActionList = [];
         if (activeTabAction === 'overdue') {
-          filteredActionList = allActiveContracts.filter(x => x.st.type === 'overdue' || x.daysDiff < 0);
+          // Đưa Còn lãi lên đầu tab quá hạn / cần xử lý
+          filteredActionList = allActiveContracts.filter(x => isConLaiItem(x) || x.st.type === 'overdue' || x.daysDiff < 0);
         } else if (activeTabAction === 'due') {
-          filteredActionList = allActiveContracts.filter(x => (x.daysDiff >= 0 && x.daysDiff <= 3) || x.st.type === 'due' || x.st.type === 'soon');
+          filteredActionList = allActiveContracts.filter(x => !isConLaiItem(x) && ((x.daysDiff >= 0 && x.daysDiff <= 3) || x.st.type === 'due' || x.st.type === 'soon'));
         } else {
-          filteredActionList = allActiveContracts.filter(x => x.daysDiff > 3 && x.st.type !== 'overdue');
+          filteredActionList = allActiveContracts.filter(x => !isConLaiItem(x) && x.daysDiff > 3 && x.st.type !== 'overdue');
         }
 
         // Mobile-friendly card list for action required (better than table on small screens)
@@ -4256,16 +4267,19 @@ const DEFAULT_CAPITAL_SOURCES = [
             ? `<span class="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-bold">Lãi cố định: ${formatVND(w.c.SoLaiCoDinh)}</span>`
             : `<span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-semibold">${w.c.LaiNgayTrenTrieu}đ/triệu</span>`;
           
-          const badgeCls = w.daysDiff < 0 ? 'bg-rose-100 text-rose-800' : (w.daysDiff <= 3 ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-800');
-          const daysIcon = w.daysDiff < 0 ? '🔴' : (w.daysDiff <= 3 ? '🟠' : '🟢');
-          const daysText = w.daysDiff < 0 
-            ? `<span class="text-rose-600 font-bold">${daysIcon} Quá hạn ${Math.abs(w.daysDiff)} ngày</span>`
-            : (w.daysDiff === 0 ? `<span class="text-amber-600 font-bold">${daysIcon} Đến hạn hôm nay</span>` : `<span class="text-slate-600 font-medium">${daysIcon} Còn ${w.daysDiff} ngày</span>`);
+          const isConLai = isConLaiItem(w);
+          const badgeCls = isConLai ? 'bg-violet-100 text-violet-800' : (w.daysDiff < 0 ? 'bg-rose-100 text-rose-800' : (w.daysDiff <= 3 ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-800'));
+          const daysIcon = isConLai ? '💜' : (w.daysDiff < 0 ? '🔴' : (w.daysDiff <= 3 ? '🟠' : '🟢'));
+          const daysText = isConLai
+            ? `<span class="text-violet-700 font-bold">${daysIcon} Đã trả gốc — theo dõi thu nốt lãi (không phát sinh tháng sau)</span>`
+            : (w.daysDiff < 0 
+              ? `<span class="text-rose-600 font-bold">${daysIcon} Quá hạn ${Math.abs(w.daysDiff)} ngày</span>`
+              : (w.daysDiff === 0 ? `<span class="text-amber-600 font-bold">${daysIcon} Đến hạn hôm nay</span>` : `<span class="text-slate-600 font-medium">${daysIcon} Còn ${w.daysDiff} ngày</span>`));
 
-          const statusLabel = w.st && w.st.label ? w.st.label : (w.daysDiff < 0 ? 'Quá hạn' : (w.daysDiff <= 3 ? 'Đến hạn 3 ngày' : 'Còn hạn'));
+          const statusLabel = isConLai ? 'Còn lãi' : (w.st && w.st.label ? w.st.label : (w.daysDiff < 0 ? 'Quá hạn' : (w.daysDiff <= 3 ? 'Đến hạn 3 ngày' : 'Còn hạn')));
 
           return `
-            <div class="bg-white border border-slate-200 rounded-2xl p-4 mb-3 shadow-sm active:bg-slate-50 transition-colors">
+            <div class="bg-white border ${isConLai ? 'border-violet-300 ring-1 ring-violet-100' : 'border-slate-200'} rounded-2xl p-4 mb-3 shadow-sm active:bg-slate-50 transition-colors">
               <div class="flex items-start justify-between">
                 <div>
                   <div class="font-mono font-bold text-sm text-indigo-700">${w.c.MaHopDong}</div>
@@ -4278,15 +4292,15 @@ const DEFAULT_CAPITAL_SOURCES = [
 
               <div class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
                 <div>
-                  <div class="text-[10px] text-slate-500">Số vay</div>
-                  <div class="font-extrabold text-slate-800">${formatVND(w.c.SoTienVay)}</div>
+                  <div class="text-[10px] text-slate-500">${isConLai ? 'Gốc' : 'Số vay'}</div>
+                  <div class="font-extrabold text-slate-800">${isConLai ? formatVND(0) + ' (đã trả)' : formatVND(w.c.SoTienVay)}</div>
                 </div>
                 <div>
-                  <div class="text-[10px] text-slate-500">Lãi cần đóng</div>
-                  <div class="font-extrabold text-emerald-700">${formatVND(w.soLaiCanDong)}</div>
-                  ${w.isFirstCycle ? `<div class="text-[9px] text-indigo-600"> (kỳ đầu tiên, đã tính ngày dư nếu có)</div>` : ''}
+                  <div class="text-[10px] text-slate-500">${isConLai ? 'Lãi còn phải thu' : 'Lãi cần đóng'}</div>
+                  <div class="font-extrabold ${isConLai ? 'text-violet-700' : 'text-emerald-700'}">${formatVND(w.soLaiCanDong)}</div>
+                  ${w.isFirstCycle && !isConLai ? `<div class="text-[9px] text-indigo-600"> (kỳ đầu tiên, đã tính ngày dư nếu có)</div>` : ''}
                 </div>
-                ${Number(w.c.laiConNo || 0) > 0 ? `<div class="col-span-2 text-rose-650 font-bold text-[11px] mt-0.5">⚠️ Nợ lãi cũ: <span class="font-black text-rose-700">${formatVND(w.c.laiConNo)}</span> đ</div>` : ''}
+                ${!isConLai && Number(w.c.laiConNo || 0) > 0 ? `<div class="col-span-2 text-rose-650 font-bold text-[11px] mt-0.5">⚠️ Nợ lãi cũ: <span class="font-black text-rose-700">${formatVND(w.c.laiConNo)}</span> đ</div>` : ''}
                 <div class="col-span-2 mt-1">
                   <div class="text-[10px] text-slate-500">Hình thức</div>
                   <div>${loaiHDSummary}</div>
@@ -4297,8 +4311,8 @@ const DEFAULT_CAPITAL_SOURCES = [
 
               <div class="mt-3 flex gap-2">
                 <button onclick="window.openPaymentModal && window.openPaymentModal('${w.c.MaHopDong}'); event.stopImmediatePropagation();" 
-                        class="flex-1 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white px-4 py-3 rounded-2xl text-sm font-extrabold shadow-sm transition-all active:scale-[0.985]">
-                  💰 Đóng lãi nhanh
+                        class="flex-1 ${isConLai ? 'bg-violet-600 hover:bg-violet-700 active:bg-violet-800' : 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800'} text-white px-4 py-3 rounded-2xl text-sm font-extrabold shadow-sm transition-all active:scale-[0.985]">
+                  ${isConLai ? '💰 Thu nốt lãi còn lại' : '💰 Đóng lãi nhanh'}
                 </button>
                 <button onclick="window.openContractModal && window.openContractModal('${w.c.MaHopDong}'); event.stopImmediatePropagation();" 
                         class="px-4 py-3 border border-slate-300 hover:bg-slate-50 active:bg-slate-100 rounded-2xl text-sm font-semibold transition-all">
@@ -4902,11 +4916,28 @@ const DEFAULT_CAPITAL_SOURCES = [
         // Build list with warning status for sorting and coloring
         let contractList = state.contracts.map(contract => {
           const calc = calculateContractInterest(contract);
-          const status = getContractWarningStatus(contract);
+          const status = contract.TrangThai === 'Còn lãi'
+            ? { type: 'con_lai', label: 'Còn lãi', daysDiff: -99999, absDays: 0 }
+            : getContractWarningStatus(contract);
           return { contract, calc, status };
         });
-        // Sort by urgency: most overdue (smallest/negative daysDiff) first, then soonest due, then normal. Then by Mã HĐ.
+        // Ưu tiên: Còn lãi (đã trả gốc, cần thu nốt lãi) → lên ĐẦU danh sách cảnh báo
+        // Sau đó: quá hạn (daysDiff nhỏ nhất) → đến hạn → bình thường → đã tất toán
         contractList.sort((a, b) => {
+          const rank = (item) => {
+            if (item.contract.TrangThai === 'Còn lãi') return 0;
+            if (item.contract.TrangThai === 'Đã tất toán') return 3;
+            if (item.status && item.status.type === 'overdue') return 1;
+            return 2;
+          };
+          const ra = rank(a), rb = rank(b);
+          if (ra !== rb) return ra - rb;
+          // Trong nhóm Còn lãi: lãi còn nhiều hơn lên trước
+          if (ra === 0) {
+            const la = Number(a.calc.laiConNo || 0);
+            const lb = Number(b.calc.laiConNo || 0);
+            if (lb !== la) return lb - la;
+          }
           const da = (a.status.daysDiff != null) ? a.status.daysDiff : 9999;
           const db = (b.status.daysDiff != null) ? b.status.daysDiff : 9999;
           if (da !== db) return da - db;
@@ -4934,6 +4965,19 @@ const DEFAULT_CAPITAL_SOURCES = [
         });
         const khFilterHTML = `<select class="text-[7px] px-0.5 py-0 border border-slate-300 rounded bg-white" style="width:46px;height:12px;" onchange="window.setContractCustomerFilter && window.setContractCustomerFilter(this.value)" title="Lọc KH (cạnh 'Khách Hàng')">${khFilterOpts}</select>`;
 
+        const conLaiList = contractList.filter(x => x.contract.TrangThai === 'Còn lãi');
+        const conLaiBanner = conLaiList.length > 0 ? `
+          <div class="mb-3 p-3 rounded-2xl border border-violet-300 bg-violet-50 flex flex-wrap items-center justify-between gap-2 shadow-sm">
+            <div class="text-sm">
+              <span class="font-extrabold text-violet-800">⚠️ ${conLaiList.length} HĐ đã trả gốc — còn lãi chưa thu</span>
+              <span class="block text-[11px] text-violet-700 font-semibold mt-0.5">Đã đưa lên đầu danh sách. Chỉ theo dõi thu nốt lãi (không tính lãi tháng sau).</span>
+            </div>
+            <div class="text-right font-black text-violet-700 text-sm">
+              Tổng lãi còn: ${formatVND(conLaiList.reduce((s, x) => s + Number(x.calc.laiConNo || 0), 0))}
+            </div>
+          </div>
+        ` : '';
+
         let rows = '';
         contractList.forEach(({ contract, calc, status }, idx) => {
           const cust = state.customers.find(c => c.MaKH === contract.MaKH);
@@ -4946,8 +4990,11 @@ const DEFAULT_CAPITAL_SOURCES = [
           let rowBgClass = 'hover:bg-slate-50';
           let warningTag = '';
           if (contract.TrangThai === 'Còn lãi') {
-            rowBgClass = 'bg-violet-50/70 hover:bg-violet-100/70 border-l-4 border-l-violet-500';
-            warningTag = `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-violet-600 text-white ml-1 shadow-sm">💰 Còn lãi ${formatVND(calc.laiConNo)}</span>`;
+            rowBgClass = 'bg-violet-100/90 hover:bg-violet-100 border-l-4 border-l-violet-600 ring-1 ring-violet-200';
+            warningTag = `<span class="inline-flex flex-col items-start gap-0.5 ml-1">
+              <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-violet-700 text-white shadow-sm animate-pulse">⚠️ ĐÃ TRẢ GỐC — CÒN LÃI ${formatVND(calc.laiConNo)}</span>
+              <span class="text-[9px] font-bold text-violet-700">Theo dõi thu nốt lãi (không phát sinh tháng sau)</span>
+            </span>`;
           } else if (contract.TrangThai === 'Đang vay') {
             if (status.type === 'overdue') {
               rowBgClass = 'bg-rose-50/70 hover:bg-rose-100/70 border-l-4 border-l-rose-500';
@@ -4988,7 +5035,7 @@ const DEFAULT_CAPITAL_SOURCES = [
               <td class="p-2 text-center"><button onclick="window.openPaymentModal && window.openPaymentModal('${contract.MaHopDong}')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold">Thu</button><button onclick="window.openContractModal && window.openContractModal('${contract.MaHopDong}')" class="text-indigo-600 hover:text-indigo-800 font-semibold ml-1 text-xs">Sửa</button><button onclick="window.handleDeleteContract && window.handleDeleteContract('${contract.MaHopDong}')" class="text-rose-600 hover:text-rose-800 font-semibold ml-1 text-xs">Xóa</button></td>
             </tr>`;
         });
-        mainContentHTML = `<div class="bg-white rounded-2xl border border-slate-100 overflow-x-auto shadow-sm"><table class="w-full text-sm text-left"><thead><tr class="bg-slate-50 border-b text-slate-400 font-bold"><th class="p-2 uppercase text-xs">STT</th><th class="p-2 uppercase">Mã HĐ</th><th class="p-2 uppercase text-xs">Khách Hàng <span class="inline-block align-middle">${khFilterHTML}</span></th><th class="p-2 uppercase text-xs">Ngày vay</th><th class="p-2 uppercase text-xs">TT gần nhất</th><th class="p-2 uppercase text-xs text-indigo-700 bg-indigo-50/70 font-extrabold rounded-t">Ngày vay sau đáo</th><th class="p-2 uppercase text-xs">Đến hạn</th><th class="p-2 text-right uppercase">Số vay</th><th class="p-2 text-right uppercase text-xs">Lãi Ngày / 1 Triệu (VNĐ) *</th><th class="p-2 uppercase">Timeline nguồn vốn (tự chia)</th><th class="p-2 text-right uppercase text-xs">Lãi 1 tháng (30d)</th><th class="p-2 text-right uppercase">Lãi còn nợ</th><th class="p-2 text-center uppercase">Thao tác</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+        mainContentHTML = `${conLaiBanner}<div class="bg-white rounded-2xl border border-slate-100 overflow-x-auto shadow-sm"><table class="w-full text-sm text-left"><thead><tr class="bg-slate-50 border-b text-slate-400 font-bold"><th class="p-2 uppercase text-xs">STT</th><th class="p-2 uppercase">Mã HĐ</th><th class="p-2 uppercase text-xs">Khách Hàng <span class="inline-block align-middle">${khFilterHTML}</span></th><th class="p-2 uppercase text-xs">Ngày vay</th><th class="p-2 uppercase text-xs">TT gần nhất</th><th class="p-2 uppercase text-xs text-indigo-700 bg-indigo-50/70 font-extrabold rounded-t">Ngày vay sau đáo</th><th class="p-2 uppercase text-xs">Đến hạn</th><th class="p-2 text-right uppercase">Số vay</th><th class="p-2 text-right uppercase text-xs">Lãi Ngày / 1 Triệu (VNĐ) *</th><th class="p-2 uppercase">Timeline nguồn vốn (tự chia)</th><th class="p-2 text-right uppercase text-xs">Lãi 1 tháng (30d)</th><th class="p-2 text-right uppercase">Lãi còn nợ</th><th class="p-2 text-center uppercase">Thao tác</th></tr></thead><tbody>${rows}</tbody></table></div>`;
       }
       else if (state.activeTab === 'payments') {
         let rows = '';
