@@ -2491,9 +2491,9 @@ const DEFAULT_CAPITAL_SOURCES = [
         if (cPayments.length === 0) {
           // Nếu chưa có giao dịch trả lãi nào, giữ nguyên ngày đáo hạn nếu đã có, chỉ điền mặc định nếu trống
           if (!c.NgayDaoHan && c.NgayVay) {
-            const start = new Date(c.NgayVay);
+            const start = ymdToLocalDate(c.NgayVay) || new Date(c.NgayVay);
             start.setDate(start.getDate() + 30);
-            c.NgayDaoHan = start.toISOString().split('T')[0];
+            c.NgayDaoHan = localDateToYMD(start);
             changed = true;
           }
           return;
@@ -2501,26 +2501,26 @@ const DEFAULT_CAPITAL_SOURCES = [
 
         // Lấy giao dịch trả lãi mới nhất (kỳ đóng gần nhất)
         const latestPay = cPayments[cPayments.length - 1];
-        const closeDateStr = latestPay.KyLaiDen || latestPay.NgayThanhToan;
-        let baseDate = new Date(closeDateStr);
+        const closeDateStr = toInputDate(latestPay.KyLaiDen || latestPay.NgayThanhToan) || latestPay.KyLaiDen || latestPay.NgayThanhToan;
+        let baseDate = ymdToLocalDate(closeDateStr) || new Date(closeDateStr);
         if (isNaN(baseDate.getTime())) {
-          baseDate = new Date(latestPay.NgayThanhToan);
+          baseDate = ymdToLocalDate(latestPay.NgayThanhToan) || new Date(latestPay.NgayThanhToan);
         }
 
         // Ngày đáo hạn tiếp theo = Kỳ đóng gần nhất + 30 ngày
-        baseDate.setDate(baseDate.getDate() + 30);
+        baseDate = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + 30);
 
         // Nếu ngày thực nộp sau hạn đó, tịnh tiến thêm các chu kỳ 30 ngày
-        const payDate = new Date(latestPay.NgayThanhToan);
-        if (!isNaN(payDate.getTime())) {
-          payDate.setHours(0, 0, 0, 0);
+        const payDate = ymdToLocalDate(latestPay.NgayThanhToan);
+        if (payDate && !isNaN(payDate.getTime())) {
           while (baseDate < payDate) {
-            baseDate.setDate(baseDate.getDate() + 30);
+            baseDate = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + 30);
           }
         }
 
-        const calculatedNgayDaoHan = baseDate.toISOString().split('T')[0];
-        if (c.NgayDaoHan !== calculatedNgayDaoHan) {
+        const calculatedNgayDaoHan = localDateToYMD(baseDate);
+        const currentIso = toInputDate(c.NgayDaoHan) || c.NgayDaoHan;
+        if (currentIso !== calculatedNgayDaoHan) {
           c.NgayDaoHan = calculatedNgayDaoHan;
           changed = true;
         }
@@ -4084,9 +4084,14 @@ const DEFAULT_CAPITAL_SOURCES = [
       });
     }
 
-    function renderApp() {
+    // Giữ vị trí cuộn khi re-render cùng tab (tránh nhảy về đầu trang)
+    let _lastRenderActiveTab = null;
+    function renderApp(opts = {}) {
       const container = document.getElementById('app-container');
       if (!container) return;
+      const keepScroll = opts.keepScroll !== false && state.activeTab === _lastRenderActiveTab;
+      const savedScrollY = keepScroll ? (window.scrollY || document.documentElement.scrollTop || 0) : 0;
+      _lastRenderActiveTab = state.activeTab;
       try {
       const statsObj = getStats();
       const tongRutLai = (state.interestWithdrawals || []).reduce((sum, w) => sum + Number(w.SoTien || 0), 0);
@@ -4113,71 +4118,98 @@ const DEFAULT_CAPITAL_SOURCES = [
           ? statsObj.laiThucConLai
           : Math.max(0, (statsObj.poolLaiSauChuyenKD != null ? statsObj.poolLaiSauChuyenKD : (tienLaiThuc - (statsObj.soLaiChuyenKD || 0))) - statsObj.soLaiDoiTacDaRut - statsObj.soLaiOwnerDaRut);
 
-        // Calendar computation for due dates - placed early so it can be referenced in the dashboard HTML string higher up
+        // Calendar: lịch trả lãi theo NgayDaoHan (chuẩn hóa local YYYY-MM-DD)
         const calSection = (() => {
             const dueMap = {};
-            const today = new Date();
-            today.setHours(0,0,0,0);
-            const todayStr = today.toISOString().split('T')[0];
-            state.contracts.filter(c => c.TrangThai === 'Đang vay' && c.NgayDaoHan).forEach(c => {
-              const key = c.NgayDaoHan;
-              if (!dueMap[key]) dueMap[key] = { count: 0, totalVay: 0, totalLai: 0 };
+            let totalActiveWithDue = 0;
+            state.contracts.forEach(c => {
+              if (c.TrangThai !== 'Đang vay') return;
+              // Ưu tiên ngày đáo hạn; fallback kỳ lãi đến từ gợi ý
               const sug = getCurrentCycleInterestSuggestion(c);
-              const lai = sug.amount || Math.round( (c.SoTienVay / 1000000) * (c.LaiNgayTrenTrieu || 0) * 30 );
+              const key = toInputDate(c.NgayDaoHan) || toInputDate(sug.kyDen) || '';
+              if (!key || !/^\d{4}-\d{2}-\d{2}$/.test(key)) return;
+              totalActiveWithDue++;
+              if (!dueMap[key]) dueMap[key] = { count: 0, totalVay: 0, totalLai: 0, maList: [] };
+              const lai = sug.amount || Math.round((Number(c.SoTienVay || 0) / 1000000) * (c.LaiNgayTrenTrieu || 0) * 30);
               const calc = calculateContractInterest(c);
               dueMap[key].count++;
-              dueMap[key].totalVay += (calc.duNoGocHienTai || c.SoTienVay);
+              dueMap[key].totalVay += (calc.duNoGocHienTai || c.SoTienVay || 0);
               dueMap[key].totalLai += lai;
+              dueMap[key].maList.push(c.MaHopDong);
             });
 
             const monthStats = {};
             Object.keys(dueMap).forEach(k => {
-              const mkey = k.substring(0,7);
-              if (!monthStats[mkey]) monthStats[mkey] = {count:0};
+              const mkey = k.substring(0, 7);
+              if (!monthStats[mkey]) monthStats[mkey] = { count: 0 };
               monthStats[mkey].count += dueMap[k].count;
             });
-            const sortedMonths = Object.keys(monthStats).sort();
-            let selectedMonth = state.dashboardDueCalendarMonth || '';
-            if (!selectedMonth || !monthStats[selectedMonth]) {
-              selectedMonth = sortedMonths.reduce((best, m) => (monthStats[m].count > (monthStats[best]||{count:0}).count ? m : best), sortedMonths[sortedMonths.length-1] || '2026-07');
+            // Dải tháng: từ tháng có HĐ đến tháng hiện tại + 1 (để lướt đủ)
+            const todayYM = todayYMD().substring(0, 7);
+            let sortedMonths = Object.keys(monthStats).sort();
+            if (!sortedMonths.includes(todayYM)) sortedMonths.push(todayYM);
+            sortedMonths = Array.from(new Set(sortedMonths)).sort();
+            // Mở rộng ±1 tháng quanh biên
+            const expandMonths = (ym, delta) => {
+              const [y, m] = ym.split('-').map(Number);
+              const d = new Date(y, m - 1 + delta, 1);
+              return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            };
+            if (sortedMonths.length) {
+              const first = expandMonths(sortedMonths[0], -1);
+              const last = expandMonths(sortedMonths[sortedMonths.length - 1], 1);
+              if (!sortedMonths.includes(first)) sortedMonths.unshift(first);
+              if (!sortedMonths.includes(last)) sortedMonths.push(last);
+              sortedMonths = Array.from(new Set(sortedMonths)).sort();
+            } else {
+              sortedMonths = [todayYM];
+            }
+
+            let selectedMonth = state.dashboardDueCalendarMonth || todayYM;
+            if (!sortedMonths.includes(selectedMonth)) {
+              selectedMonth = sortedMonths.includes(todayYM) ? todayYM : sortedMonths[sortedMonths.length - 1];
             }
             state.dashboardDueCalendarMonth = selectedMonth;
 
             const currentIdx = sortedMonths.indexOf(selectedMonth);
-            const prevM = currentIdx > 0 ? sortedMonths[currentIdx-1] : null;
-            const nextM = currentIdx < sortedMonths.length-1 ? sortedMonths[currentIdx+1] : null;
+            const prevM = currentIdx > 0 ? sortedMonths[currentIdx - 1] : null;
+            const nextM = currentIdx < sortedMonths.length - 1 ? sortedMonths[currentIdx + 1] : null;
 
             const [yStr, mStr] = selectedMonth.split('-');
-            const calYear = parseInt(yStr,10);
-            const calMonth = parseInt(mStr,10) - 1;
-
+            const calYear = parseInt(yStr, 10);
+            const calMonth = parseInt(mStr, 10) - 1;
             const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
             const firstDow = new Date(calYear, calMonth, 1).getDay();
             const leadingEmpty = (firstDow + 6) % 7;
 
-            const dayHeaders = ['T2','T3','T4','T5','T6','T7','CN'];
-            let grid = dayHeaders.map(h => `<div class="text-center font-bold bg-slate-100 text-[10px] py-1 border-r border-b border-slate-200">${h}</div>`).join('');
+            // Đếm HĐ trong tháng đang xem
+            let monthHdCount = 0;
+            Object.keys(dueMap).forEach(k => {
+              if (k.startsWith(selectedMonth)) monthHdCount += dueMap[k].count;
+            });
 
-            for (let i=0; i<leadingEmpty; i++) grid += `<div class="bg-slate-50 border-r border-b border-slate-200"></div>`;
+            const dayHeaders = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+            let grid = dayHeaders.map(h => `<div class="text-center font-bold bg-slate-100 text-[10px] py-1 border-r border-b border-slate-200">${h}</div>`).join('');
+            for (let i = 0; i < leadingEmpty; i++) grid += `<div class="bg-slate-50 border-r border-b border-slate-200"></div>`;
 
             const fmtShort = (n) => {
-              n = Number(n)||0;
-              if (n>=1e9) return (n/1e9).toFixed(1)+'T';
-              if (n>=1e6) return (n/1e6).toFixed(1)+'M';
-              if (n>=1e3) return Math.round(n/1e3)+'k';
-              return n;
+              n = Number(n) || 0;
+              if (n >= 1e9) return (n / 1e9).toFixed(1) + 'T';
+              if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+              if (n >= 1e3) return Math.round(n / 1e3) + 'k';
+              return String(n);
             };
 
-            for (let d=1; d<=daysInMonth; d++) {
-              const ds = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-              const info = dueMap[ds] || {count:0, totalVay:0, totalLai:0};
+            for (let d = 1; d <= daysInMonth; d++) {
+              const ds = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+              const info = dueMap[ds] || { count: 0, totalVay: 0, totalLai: 0 };
               const cellD = new Date(calYear, calMonth, d);
               const dow = cellD.getDay();
-              const weekend = dow===0 || dow===6;
+              const weekend = dow === 0 || dow === 6;
               const has = info.count > 0;
               const bg = has ? 'bg-amber-50' : (weekend ? 'bg-rose-50/30' : 'bg-white');
               const txt = weekend && !has ? 'text-rose-600' : (has ? 'text-slate-900' : 'text-slate-350');
-              
+              const tip = has ? ` title="${(info.maList || []).join(', ')}"` : '';
               let inner = `<div class="text-[11px] font-black">${d}</div>`;
               if (has) {
                 inner += `<div class="text-[8px] leading-tight font-extrabold mt-0.5">
@@ -4186,27 +4218,27 @@ const DEFAULT_CAPITAL_SOURCES = [
                   <div class="text-emerald-700 font-black">${fmtShort(info.totalLai)}</div>
                 </div>`;
               }
-              grid += `<div class="p-0.5 border-r border-b border-slate-200 text-center min-h-[44px] flex flex-col justify-center ${bg} ${txt}">${inner}</div>`;
+              grid += `<div class="p-0.5 border-r border-b border-slate-200 text-center min-h-[44px] flex flex-col justify-center ${bg} ${txt}"${tip}>${inner}</div>`;
             }
 
-            const calHTML = `
-              <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 lg:min-h-[380px] flex flex-col justify-between">
+            return `
+              <div id="dashboard-calendar-section" class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 lg:min-h-[380px] flex flex-col justify-between">
                 <div class="flex items-center justify-between gap-3 mb-2.5">
                   <span class="font-bold text-slate-800 text-xs uppercase flex items-center gap-1.5">
                     <span>📅</span> Lịch đáo hạn tháng
+                    <span class="normal-case font-semibold text-slate-500">(${monthHdCount}/${totalActiveWithDue} HĐ có hạn trong tháng)</span>
                   </span>
                   <div class="flex items-center gap-1">
-                    ${prevM ? `<button onclick="if(window.state){window.state.dashboardDueCalendarMonth='${prevM}';if(window.renderApp)window.renderApp();}" class="p-1 hover:bg-slate-100 rounded text-[10px] font-bold border shadow-xs transition">◀</button>` : ''}
+                    ${prevM ? `<button type="button" onclick="window.changeDashboardCalMonth && window.changeDashboardCalMonth('${prevM}')" class="p-1 hover:bg-slate-100 rounded text-[10px] font-bold border shadow-xs transition">◀</button>` : ''}
                     <span class="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-bold tracking-wider">${mStr}/${yStr}</span>
-                    ${nextM ? `<button onclick="if(window.state){window.state.dashboardDueCalendarMonth='${nextM}';if(window.renderApp)window.renderApp();}" class="p-1 hover:bg-slate-100 rounded text-[10px] font-bold border shadow-xs transition">▶</button>` : ''}
+                    ${nextM ? `<button type="button" onclick="window.changeDashboardCalMonth && window.changeDashboardCalMonth('${nextM}')" class="p-1 hover:bg-slate-100 rounded text-[10px] font-bold border shadow-xs transition">▶</button>` : ''}
                   </div>
                 </div>
                 <div class="grid grid-cols-7 border-l border-t border-slate-200 rounded-lg overflow-hidden bg-white">
                   ${grid}
                 </div>
-                <div class="text-[9px] text-slate-400 mt-2 font-medium">Mỗi ô: số HĐ / vốn / lãi. T7 & CN màu hồng.</div>
+                <div class="text-[9px] text-slate-400 mt-2 font-medium">Mỗi ô: số HĐ / vốn / lãi theo <b>Ngày đáo hạn đóng lãi</b>. Hover ô để xem mã HĐ. T7 &amp; CN màu hồng.</div>
               </div>`;
-            return calHTML;
         })();
 
         let sourcesHTML = '';
@@ -4815,15 +4847,15 @@ const DEFAULT_CAPITAL_SOURCES = [
 
                   return `
                     <div class="flex gap-4 border-b border-slate-150 pb-2 mb-4 text-xs font-bold">
-                      <button onclick="if(window.state){ window.state.dashboardSubTab = 'capital'; if(window.renderApp) window.renderApp(); }" 
+                      <button type="button" onclick="if(window.state){ window.state.dashboardSubTab = 'capital'; if(window.renderApp) window.renderApp({keepScroll:true}); }" 
                               class="pb-2 transition-all ${subTab === 'capital' ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-400 hover:text-slate-700'}">
                         Chi tiết dòng vốn
                       </button>
-                      <button onclick="if(window.state){ window.state.dashboardSubTab = 'monthly'; if(window.renderApp) window.renderApp(); }" 
+                      <button type="button" onclick="if(window.state){ window.state.dashboardSubTab = 'monthly'; if(window.renderApp) window.renderApp({keepScroll:true}); }" 
                               class="pb-2 transition-all ${subTab === 'monthly' ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-400 hover:text-slate-700'}">
                         Trả lãi theo tháng
                       </button>
-                      <button onclick="if(window.state){ window.state.dashboardSubTab = 'recent'; if(window.renderApp) window.renderApp(); }" 
+                      <button type="button" onclick="if(window.state){ window.state.dashboardSubTab = 'recent'; if(window.renderApp) window.renderApp({keepScroll:true}); }" 
                               class="pb-2 transition-all ${subTab === 'recent' ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-400 hover:text-slate-700'}">
                         Nhật ký 5 GD
                       </button>
@@ -5366,6 +5398,21 @@ const DEFAULT_CAPITAL_SOURCES = [
       if (state.activeTab === 'dashboard') {
         renderDashboardCharts();
       }
+      // Khôi phục vị trí cuộn (tránh nhảy lên đầu khi bấm tab dưới dashboard)
+      if (keepScroll && savedScrollY > 0) {
+        const restore = () => {
+          window.scrollTo(0, savedScrollY);
+          if (document.documentElement) document.documentElement.scrollTop = savedScrollY;
+          if (document.body) document.body.scrollTop = savedScrollY;
+        };
+        restore();
+        requestAnimationFrame(() => {
+          restore();
+          requestAnimationFrame(restore);
+        });
+        setTimeout(restore, 50);
+        setTimeout(restore, 150);
+      }
       } catch(e) {
         try {
           container.innerHTML = '<div style="padding:16px;color:#f87171;background:#0f172a;font-family:monospace;white-space:pre-wrap">Lỗi khi vẽ giao diện: ' + (e && e.message || e) + '\n\nThử bấm nút ở màn hình loading hoặc reload file.</div>';
@@ -5373,16 +5420,23 @@ const DEFAULT_CAPITAL_SOURCES = [
       }
     }
 
+    function changeDashboardCalMonth(ym) {
+      if (!ym || !state) return;
+      state.dashboardDueCalendarMonth = ym;
+      if (window.renderApp) window.renderApp({ keepScroll: true });
+    }
+    window.changeDashboardCalMonth = changeDashboardCalMonth;
+
     // === TABS & SEARCH CHO HỢP ĐỒNG CẦN XỬ LÝ ===
     function setActionRequiredTab(tabName) {
       state.actionRequiredTab = tabName;
-      if (window.renderApp) window.renderApp();
+      if (window.renderApp) window.renderApp({ keepScroll: true });
     }
     window.setActionRequiredTab = setActionRequiredTab;
 
     function setActionSearchTerm(term) {
       state.actionSearchTerm = term;
-      if (window.renderApp) window.renderApp();
+      if (window.renderApp) window.renderApp({ keepScroll: true });
     }
     window.setActionSearchTerm = setActionSearchTerm;
 
