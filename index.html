@@ -4084,13 +4084,40 @@ const DEFAULT_CAPITAL_SOURCES = [
       });
     }
 
-    // Giữ vị trí cuộn khi re-render cùng tab (tránh nhảy về đầu trang)
+    // Giữ vị trí cuộn khi re-render cùng tab (scroll nằm trong <main>, không phải window)
     let _lastRenderActiveTab = null;
+    function getMainScrollEl() {
+      return document.getElementById('main-workspace') || document.querySelector('main.overflow-y-auto') || document.querySelector('main');
+    }
+    function captureScrollPos() {
+      const main = getMainScrollEl();
+      return {
+        main: main ? main.scrollTop : 0,
+        win: window.scrollY || document.documentElement.scrollTop || 0
+      };
+    }
+    function restoreScrollPos(pos) {
+      if (!pos) return;
+      const apply = () => {
+        const main = getMainScrollEl();
+        if (main && pos.main > 0) main.scrollTop = pos.main;
+        if (pos.win > 0) {
+          window.scrollTo(0, pos.win);
+          if (document.documentElement) document.documentElement.scrollTop = pos.win;
+          if (document.body) document.body.scrollTop = pos.win;
+        }
+      };
+      apply();
+      requestAnimationFrame(() => { apply(); requestAnimationFrame(apply); });
+      setTimeout(apply, 40);
+      setTimeout(apply, 120);
+      setTimeout(apply, 280);
+    }
     function renderApp(opts = {}) {
       const container = document.getElementById('app-container');
       if (!container) return;
       const keepScroll = opts.keepScroll !== false && state.activeTab === _lastRenderActiveTab;
-      const savedScrollY = keepScroll ? (window.scrollY || document.documentElement.scrollTop || 0) : 0;
+      const savedScroll = keepScroll ? captureScrollPos() : null;
       _lastRenderActiveTab = state.activeTab;
       try {
       const statsObj = getStats();
@@ -4118,52 +4145,35 @@ const DEFAULT_CAPITAL_SOURCES = [
           ? statsObj.laiThucConLai
           : Math.max(0, (statsObj.poolLaiSauChuyenKD != null ? statsObj.poolLaiSauChuyenKD : (tienLaiThuc - (statsObj.soLaiChuyenKD || 0))) - statsObj.soLaiDoiTacDaRut - statsObj.soLaiOwnerDaRut);
 
-        // Calendar: lịch trả lãi theo NgayDaoHan (chuẩn hóa local YYYY-MM-DD)
+        // Calendar: lịch đóng lãi lặp theo NGÀY VAY mỗi tháng cho đến khi tất toán
+        // VD: vay 01/06 → hiện 01/06, 01/07, 01/08... mỗi tháng chưa tất toán
         const calSection = (() => {
-            const dueMap = {};
-            let totalActiveWithDue = 0;
-            state.contracts.forEach(c => {
-              if (c.TrangThai !== 'Đang vay') return;
-              // Ưu tiên ngày đáo hạn; fallback kỳ lãi đến từ gợi ý
-              const sug = getCurrentCycleInterestSuggestion(c);
-              const key = toInputDate(c.NgayDaoHan) || toInputDate(sug.kyDen) || '';
-              if (!key || !/^\d{4}-\d{2}-\d{2}$/.test(key)) return;
-              totalActiveWithDue++;
-              if (!dueMap[key]) dueMap[key] = { count: 0, totalVay: 0, totalLai: 0, maList: [] };
-              const lai = sug.amount || Math.round((Number(c.SoTienVay || 0) / 1000000) * (c.LaiNgayTrenTrieu || 0) * 30);
-              const calc = calculateContractInterest(c);
-              dueMap[key].count++;
-              dueMap[key].totalVay += (calc.duNoGocHienTai || c.SoTienVay || 0);
-              dueMap[key].totalLai += lai;
-              dueMap[key].maList.push(c.MaHopDong);
-            });
-
-            const monthStats = {};
-            Object.keys(dueMap).forEach(k => {
-              const mkey = k.substring(0, 7);
-              if (!monthStats[mkey]) monthStats[mkey] = { count: 0 };
-              monthStats[mkey].count += dueMap[k].count;
-            });
-            // Dải tháng: từ tháng có HĐ đến tháng hiện tại + 1 (để lướt đủ)
-            const todayYM = todayYMD().substring(0, 7);
-            let sortedMonths = Object.keys(monthStats).sort();
-            if (!sortedMonths.includes(todayYM)) sortedMonths.push(todayYM);
-            sortedMonths = Array.from(new Set(sortedMonths)).sort();
-            // Mở rộng ±1 tháng quanh biên
             const expandMonths = (ym, delta) => {
               const [y, m] = ym.split('-').map(Number);
               const d = new Date(y, m - 1 + delta, 1);
               return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
             };
-            if (sortedMonths.length) {
-              const first = expandMonths(sortedMonths[0], -1);
-              const last = expandMonths(sortedMonths[sortedMonths.length - 1], 1);
-              if (!sortedMonths.includes(first)) sortedMonths.unshift(first);
-              if (!sortedMonths.includes(last)) sortedMonths.push(last);
-              sortedMonths = Array.from(new Set(sortedMonths)).sort();
-            } else {
-              sortedMonths = [todayYM];
+            const todayYM = todayYMD().substring(0, 7);
+
+            // HĐ chưa tất toán (đang vay hoặc còn lãi) có ngày vay
+            const activeContracts = state.contracts.filter(c =>
+              (c.TrangThai === 'Đang vay' || c.TrangThai === 'Còn lãi') && c.NgayVay
+            );
+
+            // Dải tháng: từ tháng vay sớm nhất → tháng hiện tại + 2
+            let minYM = todayYM;
+            activeContracts.forEach(c => {
+              const iso = toInputDate(c.NgayVay);
+              if (iso && iso.substring(0, 7) < minYM) minYM = iso.substring(0, 7);
+            });
+            let sortedMonths = [];
+            let cur = expandMonths(minYM, -1);
+            const endYM = expandMonths(todayYM, 2);
+            while (cur <= endYM) {
+              sortedMonths.push(cur);
+              cur = expandMonths(cur, 1);
             }
+            if (!sortedMonths.length) sortedMonths = [todayYM];
 
             let selectedMonth = state.dashboardDueCalendarMonth || todayYM;
             if (!sortedMonths.includes(selectedMonth)) {
@@ -4177,17 +4187,40 @@ const DEFAULT_CAPITAL_SOURCES = [
 
             const [yStr, mStr] = selectedMonth.split('-');
             const calYear = parseInt(yStr, 10);
-            const calMonth = parseInt(mStr, 10) - 1;
+            const calMonth = parseInt(mStr, 10) - 1; // 0-based
             const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
-            const firstDow = new Date(calYear, calMonth, 1).getDay();
-            const leadingEmpty = (firstDow + 6) % 7;
 
-            // Đếm HĐ trong tháng đang xem
+            // Map ngày trong tháng → HĐ (theo ngày vay lặp hàng tháng)
+            const dueMap = {}; // key: YYYY-MM-DD in selected month
             let monthHdCount = 0;
-            Object.keys(dueMap).forEach(k => {
-              if (k.startsWith(selectedMonth)) monthHdCount += dueMap[k].count;
+            activeContracts.forEach(c => {
+              const vayIso = toInputDate(c.NgayVay);
+              if (!vayIso) return;
+              const vayParts = vayIso.split('-').map(Number);
+              const vayY = vayParts[0], vayM = vayParts[1], vayD = vayParts[2];
+              // Chỉ hiện từ tháng bắt đầu vay trở đi
+              const vayYM = `${vayY}-${String(vayM).padStart(2, '0')}`;
+              if (selectedMonth < vayYM) return;
+
+              // Ngày đóng lãi trong tháng xem = cùng ngày với ngày vay (clamp cuối tháng)
+              const dayInMonth = Math.min(vayD, daysInMonth);
+              const key = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(dayInMonth).padStart(2, '0')}`;
+
+              if (!dueMap[key]) dueMap[key] = { count: 0, totalVay: 0, totalLai: 0, maList: [] };
+              const calc = calculateContractInterest(c);
+              const sug = getCurrentCycleInterestSuggestion(c);
+              const lai = c.TrangThai === 'Còn lãi'
+                ? (calc.laiConNo || 0)
+                : (sug.amount || Math.round((Number(c.SoTienVay || 0) / 1000000) * (c.LaiNgayTrenTrieu || 0) * 30));
+              dueMap[key].count++;
+              dueMap[key].totalVay += (calc.duNoGocHienTai || (c.TrangThai === 'Còn lãi' ? 0 : c.SoTienVay) || 0);
+              dueMap[key].totalLai += lai;
+              dueMap[key].maList.push(c.MaHopDong);
+              monthHdCount++;
             });
 
+            const firstDow = new Date(calYear, calMonth, 1).getDay();
+            const leadingEmpty = (firstDow + 6) % 7;
             const dayHeaders = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
             let grid = dayHeaders.map(h => `<div class="text-center font-bold bg-slate-100 text-[10px] py-1 border-r border-b border-slate-200">${h}</div>`).join('');
             for (let i = 0; i < leadingEmpty; i++) grid += `<div class="bg-slate-50 border-r border-b border-slate-200"></div>`;
@@ -4224,9 +4257,9 @@ const DEFAULT_CAPITAL_SOURCES = [
             return `
               <div id="dashboard-calendar-section" class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 lg:min-h-[380px] flex flex-col justify-between">
                 <div class="flex items-center justify-between gap-3 mb-2.5">
-                  <span class="font-bold text-slate-800 text-xs uppercase flex items-center gap-1.5">
-                    <span>📅</span> Lịch đáo hạn tháng
-                    <span class="normal-case font-semibold text-slate-500">(${monthHdCount}/${totalActiveWithDue} HĐ có hạn trong tháng)</span>
+                  <span class="font-bold text-slate-800 text-xs uppercase flex items-center gap-1.5 flex-wrap">
+                    <span>📅</span> Lịch đóng lãi tháng
+                    <span class="normal-case font-semibold text-slate-500">(${monthHdCount}/${activeContracts.length} HĐ trong tháng — theo ngày vay)</span>
                   </span>
                   <div class="flex items-center gap-1">
                     ${prevM ? `<button type="button" onclick="window.changeDashboardCalMonth && window.changeDashboardCalMonth('${prevM}')" class="p-1 hover:bg-slate-100 rounded text-[10px] font-bold border shadow-xs transition">◀</button>` : ''}
@@ -4237,7 +4270,10 @@ const DEFAULT_CAPITAL_SOURCES = [
                 <div class="grid grid-cols-7 border-l border-t border-slate-200 rounded-lg overflow-hidden bg-white">
                   ${grid}
                 </div>
-                <div class="text-[9px] text-slate-400 mt-2 font-medium">Mỗi ô: số HĐ / vốn / lãi theo <b>Ngày đáo hạn đóng lãi</b>. Hover ô để xem mã HĐ. T7 &amp; CN màu hồng.</div>
+                <div class="text-[9px] text-slate-400 mt-2 font-medium leading-relaxed">
+                  Lịch theo <b>ngày vay</b> lặp mỗi tháng (vd vay 01/06 → hiện 01/06, 01/07, 01/08…) cho đến khi <b>tất toán</b>.
+                  Ô: số HĐ / vốn / lãi. Hover xem mã HĐ.
+                </div>
               </div>`;
         })();
 
@@ -5323,8 +5359,8 @@ const DEFAULT_CAPITAL_SOURCES = [
               })()}
             </aside>
 
-            <!-- MAIN WORKSPACE -->
-            <main class="flex-1 overflow-y-auto p-4 lg:p-6 w-full pb-20 lg:pb-6 bg-slate-50 text-slate-800">
+            <!-- MAIN WORKSPACE (id dùng để giữ vị trí cuộn khi re-render) -->
+            <main id="main-workspace" class="flex-1 overflow-y-auto p-4 lg:p-6 w-full pb-20 lg:pb-6 bg-slate-50 text-slate-800">
               ${warningHTML}
 
               <!-- PAGE HEADER FOR TABS OTHER THAN DASHBOARD -->
@@ -5398,20 +5434,9 @@ const DEFAULT_CAPITAL_SOURCES = [
       if (state.activeTab === 'dashboard') {
         renderDashboardCharts();
       }
-      // Khôi phục vị trí cuộn (tránh nhảy lên đầu khi bấm tab dưới dashboard)
-      if (keepScroll && savedScrollY > 0) {
-        const restore = () => {
-          window.scrollTo(0, savedScrollY);
-          if (document.documentElement) document.documentElement.scrollTop = savedScrollY;
-          if (document.body) document.body.scrollTop = savedScrollY;
-        };
-        restore();
-        requestAnimationFrame(() => {
-          restore();
-          requestAnimationFrame(restore);
-        });
-        setTimeout(restore, 50);
-        setTimeout(restore, 150);
+      // Khôi phục scroll của <main id="main-workspace"> (không phải window)
+      if (keepScroll && savedScroll && (savedScroll.main > 0 || savedScroll.win > 0)) {
+        restoreScrollPos(savedScroll);
       }
       } catch(e) {
         try {
