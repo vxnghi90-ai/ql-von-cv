@@ -4197,7 +4197,7 @@ const DEFAULT_CAPITAL_SOURCES = [
                 const kh = (state.customers || []).find(x => x.MaKH === c.MaKH);
                 return {
                   ma: c.MaHopDong,
-                  ten: kh ? (kh.HoTen || kh.TenKH || '') : '',
+                  ten: kh ? (kh.TenKhachHang || kh.HoTen || kh.TenKH || '') : '',
                   laiCon
                 };
               });
