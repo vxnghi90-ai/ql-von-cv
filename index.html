@@ -2628,72 +2628,36 @@ const DEFAULT_CAPITAL_SOURCES = [
 
       stats.tongTienNhanVienGiu = stats.tongLaiNhanVienGiu + stats.tongGocNhanVienGiu;
 
-      // Tính Chi Phí Lãi Nguồn / tháng từ các hợp đồng đang vay
+      // Chi Phí Lãi Nguồn / tháng = TỔNG VỐN HIỆN CÓ của mỗi nguồn × % lãi/tháng
+      // (kể cả tiền nhàn rỗi chưa cho vay — vẫn phải trả lãi cho nguồn vốn đó)
+      // Nguồn "Tiền KD khác (từ lãi)" lãi 0% / không cho vay → bỏ qua
       let chiPhiNguon1Thang = 0;
-      state.contracts.forEach(c => {
-        if (c.TrangThai === 'Đang vay') {
-          (c.LichSuNguon || []).forEach(seg => {
-            if (!seg.NgayKetThuc) {
-              const src = state.capitalSources.find(s => s.MaNguon === seg.MaNguon);
-              if (src) {
-                chiPhiNguon1Thang += Math.round((seg.SoTien || 0) * ((src.LaiSuatThang || 0) / 100));
-              }
-            }
-          });
+      state.capitalSources.forEach(src => {
+        if (isNonLendingSource(src)) return;
+        const details = calculateCapitalSourceDetails(src);
+        const von = Number(details.tongVonHienTai || 0);
+        const rate = Number(src.LaiSuatThang || 0);
+        if (von > 0 && rate > 0) {
+          chiPhiNguon1Thang += Math.round(von * (rate / 100));
         }
       });
 
       const today = new Date();
-      const daysPassed = today.getDate();
+      const daysPassed = Math.max(1, today.getDate());
       const laiDaTraNguon = Math.round((chiPhiNguon1Thang / 30) * daysPassed);
       stats.laiDaTraNguonDuyTinh = laiDaTraNguon;
       stats.chiPhiNguon1Thang = chiPhiNguon1Thang;
 
-      // Tổng Lãi Thực tế đã trả ngân hàng/nguồn vốn
+      // Tổng lãi đã đóng cho nguồn vốn (theo lịch sử bấm "Đã thanh toán")
       stats.tongLaiDaTraNguonThucTe = (state.paidSourceInterests || []).reduce((sum, w) => sum + Number(w.SoTien || 0), 0);
+      stats.tongLaiDaDongNguonLichSu = stats.tongLaiDaTraNguonThucTe;
+      stats.conNoLaiNguon = Math.max(0, laiDaTraNguon - stats.tongLaiDaTraNguonThucTe);
 
       // Lãi Thực Đã Thu = Tổng Lãi Đã Thu - Thực tế đã trả nguồn vốn
       stats.loiNhuanRongThucTe = stats.tongLaiThucThu - stats.tongLaiDaTraNguonThucTe;
       stats.tongThieuHutPhaiBu = Object.values(stats.sourceDetails).reduce((sum, item) => sum + item.thieuHut, 0);
 
-      // TÍNH LÃI ĐỐI TÁC THEO TỈ LỆ VÀ PHẠM VI HỢP ĐỒNG CỦA NGUỒN VỐN "TIỀN ĐỐI TÁC"
-      let partnerSrc = state.capitalSources.find(s => s.MaNguon === 'GOP_VON' || s.MaNguon === 'TIEN_DOI_TAC' || (s.TenNguon || '').toLowerCase().includes('đối tác')) || state.capitalSources.find(s => s.PhanTramChiaLai !== undefined);
-
-      const phanTramChia = (partnerSrc && partnerSrc.PhanTramChiaLai !== undefined && partnerSrc.PhanTramChiaLai !== null) ? Number(partnerSrc.PhanTramChiaLai) : 50;
-      const phamViChia = (partnerSrc && partnerSrc.PhamViChiaLai) ? partnerSrc.PhamViChiaLai : 'TatCa';
-      const loaiTruList = (partnerSrc && Array.isArray(partnerSrc.HopDongLoaiTru)) ? partnerSrc.HopDongLoaiTru : [];
-
-      let tongLaiThucThuDoiTac = 0;
-      if (phamViChia === 'LoaiTru' && loaiTruList.length > 0) {
-        state.payments.forEach(p => {
-          if (p.LoaiThanhToan === 'Trả lãi' && (p.TrangThaiThu === 'DaNop' || !p.TrangThaiThu)) {
-            if (!loaiTruList.includes(p.MaHopDong)) {
-              tongLaiThucThuDoiTac += Number(p.SoTienTra || 0);
-            }
-          }
-        });
-        tongLaiThucThuDoiTac = Math.max(0, tongLaiThucThuDoiTac - LAI_KY_DAU_DIEU_CHINH);
-      } else {
-        tongLaiThucThuDoiTac = stats.tongLaiThucThu;
-      }
-
-      // Lợi nhuận ròng chia đối tác tính trên Lãi thực thu của đối tác trừ cho chi phí lãi nguồn đã THỰC TẾ TRẢ ngân
-      const loiNhuanRongDoiTac = Math.max(0, tongLaiThucThuDoiTac - stats.tongLaiDaTraNguonThucTe);
-
-      stats.phanTramChiaLaiDoiTac = phanTramChia;
-      stats.phamViChiaLaiDoiTac = phamViChia;
-      stats.danhSachLoaiTruDoiTac = loaiTruList;
-      stats.tongLaiThucThuDoiTac = tongLaiThucThuDoiTac;
-      stats.loiNhuanRongDoiTac = loiNhuanRongDoiTac;
-
-      stats.laiDoiTac = Math.round(loiNhuanRongDoiTac * (phanTramChia / 100));
-      stats.soLaiDoiTacDaRut = (state.partnerWithdrawals || []).reduce((sum, w) => sum + Number(w.SoTien || 0), 0);
-      stats.soLaiDoiTacConLai = stats.laiDoiTac - stats.soLaiDoiTacDaRut;
-
-      // Lãi Thực tế của chủ sở hữu = Lãi Thực Đã Thu - Lợi nhuận dòng đối tác
-      stats.laiThucTe = stats.loiNhuanRongThucTe - stats.laiDoiTac;
-      stats.soLaiOwnerDaRut = (state.interestWithdrawals || []).reduce((sum, w) => sum + Number(w.SoTien || 0), 0);
-      // Lãi chuyển sang kinh doanh khác (ròng = đã rút sang KD − đã trả lại hệ thống)
+      // === THỨ TỰ: Lãi ròng → trừ chuyển KD khác → rồi mới chia Đối tác / Chủ sở hữu ===
       stats.soLaiChuyenKD = getBusinessInterestTransferNet();
       stats.soLaiChuyenKDDaRut = (state.businessInterestTransfers || [])
         .filter(t => t.Loai === 'RutSangKD')
@@ -2701,8 +2665,35 @@ const DEFAULT_CAPITAL_SOURCES = [
       stats.soLaiChuyenKDDaTra = (state.businessInterestTransfers || [])
         .filter(t => t.Loai === 'TraLaiHeThong')
         .reduce((s, t) => s + Number(t.SoTien || 0), 0);
-      // Lãi thực còn lại = lãi chủ − đã rút chủ − đã chuyển KD khác (ròng)
-      stats.soLaiOwnerConLai = stats.laiThucTe - stats.soLaiOwnerDaRut - stats.soLaiChuyenKD;
+
+      // Pool còn lại sau khi mượn lãi sang KD khác
+      const poolSauChuyenKD = Math.max(0, stats.loiNhuanRongThucTe - stats.soLaiChuyenKD);
+      stats.poolLaiSauChuyenKD = poolSauChuyenKD;
+
+      let partnerSrc = state.capitalSources.find(s => s.MaNguon === 'GOP_VON' || s.MaNguon === 'TIEN_DOI_TAC' || (s.TenNguon || '').toLowerCase().includes('đối tác')) || state.capitalSources.find(s => s.PhanTramChiaLai !== undefined);
+      const phanTramChia = (partnerSrc && partnerSrc.PhanTramChiaLai !== undefined && partnerSrc.PhanTramChiaLai !== null) ? Number(partnerSrc.PhanTramChiaLai) : 50;
+      const phamViChia = (partnerSrc && partnerSrc.PhamViChiaLai) ? partnerSrc.PhamViChiaLai : 'TatCa';
+      const loaiTruList = (partnerSrc && Array.isArray(partnerSrc.HopDongLoaiTru)) ? partnerSrc.HopDongLoaiTru : [];
+
+      stats.phanTramChiaLaiDoiTac = phanTramChia;
+      stats.phamViChiaLaiDoiTac = phamViChia;
+      stats.danhSachLoaiTruDoiTac = loaiTruList;
+      stats.tongLaiThucThuDoiTac = stats.tongLaiThucThu;
+      stats.loiNhuanRongDoiTac = poolSauChuyenKD;
+
+      // Chia pool còn lại → Đối tác % / Chủ sở hữu
+      stats.laiDoiTac = Math.round(poolSauChuyenKD * (phanTramChia / 100));
+      stats.laiThucTe = poolSauChuyenKD - stats.laiDoiTac;
+
+      stats.soLaiDoiTacDaRut = (state.partnerWithdrawals || []).reduce((sum, w) => sum + Number(w.SoTien || 0), 0);
+      stats.soLaiDoiTacConLai = stats.laiDoiTac - stats.soLaiDoiTacDaRut;
+
+      stats.soLaiOwnerDaRut = (state.interestWithdrawals || []).reduce((sum, w) => sum + Number(w.SoTien || 0), 0);
+      stats.soLaiOwnerConLai = stats.laiThucTe - stats.soLaiOwnerDaRut;
+
+      // Lãi Thực Còn Lại = pool sau chuyển KD − đã rút đối tác − đã rút chủ
+      // (= soLaiDoiTacConLai + soLaiOwnerConLai). Rút sang KD trừ TRƯỚC khi chia 2 bên.
+      stats.laiThucConLai = Math.max(0, poolSauChuyenKD - stats.soLaiDoiTacDaRut - stats.soLaiOwnerDaRut);
 
       return stats;
     }
@@ -4118,7 +4109,9 @@ const DEFAULT_CAPITAL_SOURCES = [
         const tienLaiThuc = statsObj.loiNhuanRongThucTe;
         const laiDoiTac = statsObj.laiDoiTac || 0;
         const tongLaiConThucTe = tienLaiThuc - laiDoiTac - tongRutLai;
-        const laiThucConLai = tienLaiThuc - statsObj.soLaiDoiTacDaRut - statsObj.soLaiOwnerDaRut - (statsObj.soLaiChuyenKD || 0);
+        const laiThucConLai = (statsObj.laiThucConLai != null)
+          ? statsObj.laiThucConLai
+          : Math.max(0, (statsObj.poolLaiSauChuyenKD != null ? statsObj.poolLaiSauChuyenKD : (tienLaiThuc - (statsObj.soLaiChuyenKD || 0))) - statsObj.soLaiDoiTacDaRut - statsObj.soLaiOwnerDaRut);
 
         // Calendar computation for due dates - placed early so it can be referenced in the dashboard HTML string higher up
         const calSection = (() => {
@@ -4270,18 +4263,8 @@ const DEFAULT_CAPITAL_SOURCES = [
 
         // Compute monthly expected interest from current contracts and source costs (for top cards)
         const laiThu1ThangHopDong = Math.round((statsObj.laiThuTrongNgay || 0) * 30);
-        let chiPhiNguon1Thang = 0;
-        state.contracts.forEach(c => {
-          if (c.TrangThai !== 'Đang vay') return;
-          (c.LichSuNguon || []).forEach(seg => {
-            if (seg.NgayKetThuc) return;
-            const src = state.capitalSources.find(s => s.MaNguon === seg.MaNguon);
-            if (src) {
-              chiPhiNguon1Thang += Math.round((seg.SoTien || 0) * ((src.LaiSuatThang || 0) / 100));
-            }
-          });
-        });
-
+        // Dùng chi phí lãi nguồn / tháng theo TỔNG VỐN nguồn (không chỉ phần đang cho vay)
+        const chiPhiNguon1Thang = statsObj.chiPhiNguon1Thang || 0;
         const laiRong1Thang = laiThu1ThangHopDong - chiPhiNguon1Thang;
         const laiRong1Ngay = Math.round(laiRong1Thang / 30);
 
@@ -4457,22 +4440,23 @@ const DEFAULT_CAPITAL_SOURCES = [
                   </div>
                 </div>
                 <div class="text-base font-black text-rose-600 tracking-tight">${formatVND(chiPhiNguon1Thang)}</div>
+                <div class="text-[9px] text-slate-400 font-medium mt-0.5">Lãi 1 tháng trên tổng vốn nguồn (kể cả nhàn rỗi)</div>
                 
                 <div class="mt-2 pt-2 border-t border-slate-100 flex flex-col gap-1 text-[10px] font-semibold text-slate-500">
                   <div class="flex justify-between items-center">
-                    <span>Đã trả thực tế:</span>
+                    <span>Tổng đã đóng (lịch sử):</span>
                     <div class="flex items-center gap-1">
-                      <span class="${statsObj.tongLaiDaTraNguonThucTe > 0 ? 'text-emerald-600 font-extrabold' : 'text-rose-600 font-extrabold'}">${formatVND(statsObj.tongLaiDaTraNguonThucTe)}</span>
-                      <span class="text-[9px]">${statsObj.tongLaiDaTraNguonThucTe <= 0 ? '⚠' : '✓'}</span>
+                      <span class="${statsObj.tongLaiDaDongNguonLichSu > 0 ? 'text-emerald-600 font-extrabold' : 'text-rose-600 font-extrabold'}">${formatVND(statsObj.tongLaiDaDongNguonLichSu || statsObj.tongLaiDaTraNguonThucTe || 0)}</span>
+                      <span class="text-[9px]">${(statsObj.tongLaiDaDongNguonLichSu || statsObj.tongLaiDaTraNguonThucTe || 0) <= 0 ? '⚠' : '✓'}</span>
                     </div>
                   </div>
                   <div class="flex justify-between text-[9px] text-slate-400">
-                    <span>Cần trả dự tính:</span>
+                    <span>Cần trả dự tính (mùng 1→nay):</span>
                     <span>${formatVND(statsObj.laiDaTraNguonDuyTinh)}</span>
                   </div>
                   <div class="flex justify-between font-bold border-t border-slate-50 pt-1">
                     <span>Còn nợ nguồn:</span>
-                    <span class="text-rose-600 font-extrabold">${formatVND(Math.max(0, (statsObj.laiDaTraNguonDuyTinh || 0) - (statsObj.tongLaiDaTraNguonThucTe || 0)))}</span>
+                    <span class="text-rose-600 font-extrabold">${formatVND(statsObj.conNoLaiNguon != null ? statsObj.conNoLaiNguon : Math.max(0, (statsObj.laiDaTraNguonDuyTinh || 0) - (statsObj.tongLaiDaTraNguonThucTe || 0)))}</span>
                   </div>
                 </div>
               </div>
@@ -4533,7 +4517,7 @@ const DEFAULT_CAPITAL_SOURCES = [
                   <div class="mt-2 text-lg font-black text-emerald-700 tracking-tight">${formatVND(laiThucConLai)}</div>
                 </div>
                 <div class="text-[10px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 font-medium">
-                  Trừ rút chủ + lãi chuyển KD khác
+                  Pool sau chuyển KD − rút ĐT − rút chủ
                 </div>
               </div>
             </div>
@@ -4613,18 +4597,18 @@ const DEFAULT_CAPITAL_SOURCES = [
                 </span>
                 <span class="bg-indigo-50 text-indigo-700 font-bold px-1.5 py-0.5 rounded text-[9px] border border-indigo-100">Chủ SH</span>
               </div>
-              <p class="text-[10px] text-slate-500 font-semibold leading-snug">Lãi hệ thống sau chia đối tác (đã trừ rút + chuyển KD).</p>
+              <p class="text-[10px] text-slate-500 font-semibold leading-snug">Phần chủ sau khi đã trừ lãi chuyển KD &amp; chia đối tác.</p>
               <div>
                 <span class="text-[10px] text-slate-500 font-bold">Khả dụng:</span>
                 <div class="text-base font-black text-indigo-700 tracking-tight">${formatVND(statsObj.soLaiOwnerConLai)}</div>
               </div>
               ${(() => {
-                const pctOwner = statsObj.laiThucTe > 0 ? Math.min(100, Math.round(((statsObj.soLaiOwnerDaRut + (statsObj.soLaiChuyenKD || 0)) / statsObj.laiThucTe) * 100)) : 0;
+                const pctOwner = statsObj.laiThucTe > 0 ? Math.min(100, Math.round((statsObj.soLaiOwnerDaRut / statsObj.laiThucTe) * 100)) : 0;
                 return `
                   <div>
                     <div class="flex justify-between text-[9px] font-bold mb-1">
-                      <span class="text-slate-400">Đã dùng ${pctOwner}%</span>
-                      <span class="text-slate-600">${formatVND((statsObj.soLaiOwnerDaRut || 0) + (statsObj.soLaiChuyenKD || 0))}</span>
+                      <span class="text-slate-400">Đã rút chủ ${pctOwner}%</span>
+                      <span class="text-slate-600">${formatVND(statsObj.soLaiOwnerDaRut || 0)}</span>
                     </div>
                     <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden border">
                       <div class="h-1.5 bg-indigo-500 rounded-full" style="width: ${pctOwner}%"></div>
@@ -6556,7 +6540,8 @@ const DEFAULT_CAPITAL_SOURCES = [
     function renderBusinessTransferModalHTML() {
       const statsObj = getStats();
       const defaultType = window.businessTransferType || 'RutSangKD';
-      const maxRut = Math.max(0, Number(statsObj.soLaiOwnerConLai || 0));
+      // Khả dụng = đúng "Lãi Thực Còn Lại" (pool sau chuyển KD − rút 2 bên)
+      const maxRut = Math.max(0, Number(statsObj.laiThucConLai != null ? statsObj.laiThucConLai : ((statsObj.soLaiOwnerConLai || 0) + (statsObj.soLaiDoiTacConLai || 0))));
       const maxTra = Math.max(0, Number(statsObj.soLaiChuyenKD || 0));
       return `
         <div id="business-transfer-modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center z-50 p-3">
@@ -6567,9 +6552,9 @@ const DEFAULT_CAPITAL_SOURCES = [
             </div>
             <form onsubmit="window.handleSaveBusinessTransfer && window.handleSaveBusinessTransfer(event)">
               <div class="bg-teal-50 border border-teal-200 rounded-xl p-3 mb-4 text-xs space-y-1">
-                <div class="flex justify-between font-semibold text-slate-700"><span>Lãi thực khả dụng:</span><span class="text-indigo-700 font-extrabold">${formatVND(maxRut)}</span></div>
+                <div class="flex justify-between font-semibold text-slate-700"><span>Lãi Thực Còn Lại (khả dụng):</span><span class="text-emerald-700 font-extrabold">${formatVND(maxRut)}</span></div>
                 <div class="flex justify-between font-semibold text-slate-700"><span>Đang ở KD khác:</span><span class="text-teal-700 font-extrabold">${formatVND(maxTra)}</span></div>
-                <p class="text-[10px] text-slate-500 pt-1">Tiền rút sang KD khác vào nguồn <b>Tiền KD khác (từ lãi)</b> — <b>không dùng để cho vay</b>.</p>
+                <p class="text-[10px] text-slate-500 pt-1 leading-relaxed">Rút sẽ <b>trừ trực tiếp Lãi Thực Còn Lại</b>, rồi mới chia phần còn lại sang <b>Lãi đối tác</b> / <b>Lãi thực tế</b>. Trả lại thì cộng ngược vào Lãi Thực Còn Lại.</p>
               </div>
               <div class="space-y-3 mb-5">
                 <div>
@@ -6613,9 +6598,10 @@ const DEFAULT_CAPITAL_SOURCES = [
       if (!ngay) return showAlert('Lỗi', 'Vui lòng chọn ngày!');
 
       const statsObj = getStats();
+      const maxRut = Math.max(0, Number(statsObj.laiThucConLai != null ? statsObj.laiThucConLai : ((statsObj.soLaiOwnerConLai || 0) + (statsObj.soLaiDoiTacConLai || 0))));
       if (loai === 'RutSangKD') {
-        if (amount > (statsObj.soLaiOwnerConLai || 0)) {
-          return showAlert('Lỗi', `Số tiền vượt quá Lãi thực khả dụng (${formatVND(statsObj.soLaiOwnerConLai)})!`);
+        if (amount > maxRut) {
+          return showAlert('Lỗi', `Số tiền vượt quá Lãi Thực Còn Lại (${formatVND(maxRut)})!`);
         }
       } else {
         if (amount > (statsObj.soLaiChuyenKD || 0)) {
