@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ql-von-cv-v41';
+const CACHE_NAME = 'ql-von-cv-v42';
 const urlsToCache = [
   './',
   './index.html',

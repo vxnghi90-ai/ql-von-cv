@@ -4170,19 +4170,25 @@ const DEFAULT_CAPITAL_SOURCES = [
             };
             const todayYM = todayYMD().substring(0, 7);
 
-            // HĐ chưa tất toán — mốc lịch = Ngày BẮT ĐẦU TÍNH LÃI (không phải ngày giải ngân)
-            // VD: giải ngân 07/06, bắt đầu tính lãi 12/07 → chỉ hiện 12/07, 12/08...; tháng 6 không có
+            // HĐ chưa tất toán
+            // Mốc: Ngày bắt đầu tính lãi (hoặc ngày vay)
+            // Lần đóng lãi ĐẦU = mốc + 1 tháng → mới hiện trên lịch
+            // VD: 12/07 bắt đầu vay/tính lãi → lần đầu đóng 12/08 (tháng 7 KHÔNG hiện; 12/08, 12/09…)
             const getInterestBaseIso = (c) =>
               toInputDate(c.NgayBatDauTinhLai) || toInputDate(c.NgayVay) || '';
+            const getFirstDueIso = (c) => {
+              const base = getInterestBaseIso(c);
+              return base ? addMonthsToYMD(base, 1) : '';
+            };
 
             const activeContracts = state.contracts.filter(c =>
-              (c.TrangThai === 'Đang vay' || c.TrangThai === 'Còn lãi') && getInterestBaseIso(c)
+              (c.TrangThai === 'Đang vay' || c.TrangThai === 'Còn lãi') && getFirstDueIso(c)
             );
 
-            // Dải tháng: từ tháng BẮT ĐẦU TÍNH LÃI sớm nhất → tháng hiện tại + 2
+            // Dải tháng: từ tháng ĐÓNG LÃI ĐẦU sớm nhất → hiện tại + 2
             let minYM = todayYM;
             activeContracts.forEach(c => {
-              const iso = getInterestBaseIso(c);
+              const iso = getFirstDueIso(c);
               if (iso && iso.substring(0, 7) < minYM) minYM = iso.substring(0, 7);
             });
             let sortedMonths = [];
@@ -4209,19 +4215,19 @@ const DEFAULT_CAPITAL_SOURCES = [
             const calMonth = parseInt(mStr, 10) - 1; // 0-based
             const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
 
-            // Map ngày trong tháng → HĐ (theo ngày BẮT ĐẦU TÍNH LÃI lặp hàng tháng)
-            const dueMap = {}; // key: YYYY-MM-DD in selected month
+            // Map ngày → HĐ: ngày đóng lãi = cùng ngày với mốc tính lãi, từ THÁNG ĐÓNG LẦN ĐẦU trở đi
+            const dueMap = {};
             let monthHdCount = 0;
             activeContracts.forEach(c => {
               const baseIso = getInterestBaseIso(c);
-              if (!baseIso) return;
-              const parts = baseIso.split('-').map(Number);
-              const baseY = parts[0], baseM = parts[1], baseD = parts[2];
-              // Chỉ hiện từ tháng bắt đầu tính lãi (không từ tháng giải ngân)
-              const baseYM = `${baseY}-${String(baseM).padStart(2, '0')}`;
-              if (selectedMonth < baseYM) return;
+              const firstDueIso = getFirstDueIso(c);
+              if (!baseIso || !firstDueIso) return;
 
-              // Ngày đóng lãi trong tháng = cùng ngày với ngày bắt đầu tính lãi
+              const baseD = parseInt(baseIso.split('-')[2], 10);
+              const firstDueYM = firstDueIso.substring(0, 7);
+              // Chỉ hiện từ tháng có lần đóng lãi đầu (mốc + 1 tháng), không hiện tháng bắt đầu vay
+              if (selectedMonth < firstDueYM) return;
+
               const dayInMonth = Math.min(baseD, daysInMonth);
               const key = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(dayInMonth).padStart(2, '0')}`;
 
@@ -4278,7 +4284,7 @@ const DEFAULT_CAPITAL_SOURCES = [
                 <div class="flex items-center justify-between gap-3 mb-2.5">
                   <span class="font-bold text-slate-800 text-xs uppercase flex items-center gap-1.5 flex-wrap">
                     <span>📅</span> Lịch đóng lãi tháng
-                    <span class="normal-case font-semibold text-slate-500">(${monthHdCount}/${activeContracts.length} HĐ trong tháng — theo ngày bắt đầu tính lãi)</span>
+                    <span class="normal-case font-semibold text-slate-500">(${monthHdCount} HĐ đến hạn đóng lãi trong tháng / ${activeContracts.length} HĐ đang theo dõi)</span>
                   </span>
                   <div class="flex items-center gap-1">
                     ${prevM ? `<button type="button" onclick="window.changeDashboardCalMonth && window.changeDashboardCalMonth('${prevM}')" class="p-1 hover:bg-slate-100 rounded text-[10px] font-bold border shadow-xs transition">◀</button>` : ''}
@@ -4290,7 +4296,8 @@ const DEFAULT_CAPITAL_SOURCES = [
                   ${grid}
                 </div>
                 <div class="text-[9px] text-slate-400 mt-2 font-medium leading-relaxed">
-                  Lịch theo <b>ngày bắt đầu tính lãi</b> (không phải ngày giải ngân). VD: giải ngân 07/06, tính lãi 12/07 → chỉ hiện <b>12/07, 12/08…</b>; tháng 6 không có.
+                  Lịch <b>ngày đến hạn đóng lãi</b> = ngày bắt đầu tính lãi <b>+ 1 tháng</b>, rồi lặp mỗi tháng.
+                  VD: bắt đầu 12/07 → lần đầu <b>12/08</b> (tháng 7 không có), sau đó 12/09, 12/10…
                   Ô: số HĐ / vốn / lãi. Hover xem mã HĐ.
                 </div>
               </div>`;
