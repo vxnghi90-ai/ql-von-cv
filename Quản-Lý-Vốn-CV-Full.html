@@ -4170,7 +4170,9 @@ const DEFAULT_CAPITAL_SOURCES = [
             };
             const todayYM = todayYMD().substring(0, 7);
 
-            // HĐ chưa tất toán
+            // Lịch đóng lãi định kỳ: chỉ HĐ "Đang vay"
+            // HĐ "Còn lãi" (đã trả gốc) không đóng theo tháng → không đưa vào ô lịch;
+            // chỉ hiện ghi chú thu nốt lãi cho đến khi tất toán xong ở Quản Lý Hợp Đồng.
             // Mốc: Ngày bắt đầu tính lãi (hoặc ngày vay)
             // Lần đóng lãi ĐẦU = mốc + 1 tháng → mới hiện trên lịch
             // VD: 12/07 bắt đầu vay/tính lãi → lần đầu đóng 12/08 (tháng 7 KHÔNG hiện; 12/08, 12/09…)
@@ -4181,13 +4183,30 @@ const DEFAULT_CAPITAL_SOURCES = [
               return base ? addMonthsToYMD(base, 1) : '';
             };
 
-            const activeContracts = state.contracts.filter(c =>
-              (c.TrangThai === 'Đang vay' || c.TrangThai === 'Còn lãi') && getFirstDueIso(c)
+            // Chỉ HĐ đang vay còn lịch đóng lãi định kỳ
+            const periodicContracts = state.contracts.filter(c =>
+              c.TrangThai === 'Đang vay' && getFirstDueIso(c)
             );
+
+            // HĐ đã trả gốc, còn lãi chưa thu — theo dõi ngoài lịch định kỳ
+            const conLaiContracts = state.contracts
+              .filter(c => c.TrangThai === 'Còn lãi' || c.LaiDongBang)
+              .map(c => {
+                const calc = calculateContractInterest(c);
+                const laiCon = Math.max(0, Number(calc.laiConNo || c.LaiDongBang || 0));
+                const kh = (state.customers || []).find(x => x.MaKH === c.MaKH);
+                return {
+                  ma: c.MaHopDong,
+                  ten: kh ? (kh.HoTen || kh.TenKH || '') : '',
+                  laiCon
+                };
+              });
+
+            const conLaiTotal = conLaiContracts.reduce((s, x) => s + (x.laiCon || 0), 0);
 
             // Dải tháng: từ tháng ĐÓNG LÃI ĐẦU sớm nhất → hiện tại + 2
             let minYM = todayYM;
-            activeContracts.forEach(c => {
+            periodicContracts.forEach(c => {
               const iso = getFirstDueIso(c);
               if (iso && iso.substring(0, 7) < minYM) minYM = iso.substring(0, 7);
             });
@@ -4215,10 +4234,10 @@ const DEFAULT_CAPITAL_SOURCES = [
             const calMonth = parseInt(mStr, 10) - 1; // 0-based
             const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
 
-            // Map ngày → HĐ: ngày đóng lãi = cùng ngày với mốc tính lãi, từ THÁNG ĐÓNG LẦN ĐẦU trở đi
+            // Map ngày → HĐ định kỳ: ngày đóng lãi = cùng ngày mốc tính lãi, từ THÁNG ĐÓNG LẦN ĐẦU trở đi
             const dueMap = {};
             let monthHdCount = 0;
-            activeContracts.forEach(c => {
+            periodicContracts.forEach(c => {
               const baseIso = getInterestBaseIso(c);
               const firstDueIso = getFirstDueIso(c);
               if (!baseIso || !firstDueIso) return;
@@ -4234,11 +4253,9 @@ const DEFAULT_CAPITAL_SOURCES = [
               if (!dueMap[key]) dueMap[key] = { count: 0, totalVay: 0, totalLai: 0, maList: [] };
               const calc = calculateContractInterest(c);
               const sug = getCurrentCycleInterestSuggestion(c);
-              const lai = c.TrangThai === 'Còn lãi'
-                ? (calc.laiConNo || 0)
-                : (sug.amount || Math.round((Number(c.SoTienVay || 0) / 1000000) * (c.LaiNgayTrenTrieu || 0) * 30));
+              const lai = sug.amount || Math.round((Number(c.SoTienVay || 0) / 1000000) * (c.LaiNgayTrenTrieu || 0) * 30);
               dueMap[key].count++;
-              dueMap[key].totalVay += (calc.duNoGocHienTai || (c.TrangThai === 'Còn lãi' ? 0 : c.SoTienVay) || 0);
+              dueMap[key].totalVay += (calc.duNoGocHienTai || c.SoTienVay || 0);
               dueMap[key].totalLai += lai;
               dueMap[key].maList.push(c.MaHopDong);
               monthHdCount++;
@@ -4279,12 +4296,31 @@ const DEFAULT_CAPITAL_SOURCES = [
               grid += `<div class="p-0.5 border-r border-b border-slate-200 text-center min-h-[44px] flex flex-col justify-center ${bg} ${txt}"${tip}>${inner}</div>`;
             }
 
+            // Ghi chú HĐ còn lãi — hiện cho đến khi hoàn thành (tất toán) ở Quản Lý Hợp Đồng
+            let conLaiNoteHtml = '';
+            if (conLaiContracts.length > 0) {
+              const lines = conLaiContracts.map(x => {
+                const tenPart = x.ten ? ` — ${x.ten}` : '';
+                return `<span class="font-bold text-violet-800">${x.ma}</span>${tenPart}: <b class="text-violet-900">${formatVND(x.laiCon)}</b>`;
+              }).join('<span class="text-violet-300 mx-1">·</span>');
+              conLaiNoteHtml = `
+                <div class="mt-2.5 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-[10px] leading-relaxed text-violet-900">
+                  <div class="font-bold uppercase tracking-wide text-violet-700 mb-0.5">
+                    ⚡ Đã trả gốc — còn lãi chưa thu (${conLaiContracts.length} HĐ · tổng ${formatVND(conLaiTotal)})
+                  </div>
+                  <div class="normal-case font-medium">${lines}</div>
+                  <div class="mt-1 text-violet-600 font-semibold">
+                    Không còn đóng lãi định kỳ trên lịch. Theo dõi thu nốt tại <b>Quản Lý Hợp Đồng</b> — ghi chú này tắt khi HĐ đã tất toán xong.
+                  </div>
+                </div>`;
+            }
+
             return `
               <div id="dashboard-calendar-section" class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 lg:min-h-[380px] flex flex-col justify-between">
                 <div class="flex items-center justify-between gap-3 mb-2.5">
                   <span class="font-bold text-slate-800 text-xs uppercase flex items-center gap-1.5 flex-wrap">
                     <span>📅</span> Lịch đóng lãi tháng
-                    <span class="normal-case font-semibold text-slate-500">(${monthHdCount} HĐ đến hạn đóng lãi trong tháng / ${activeContracts.length} HĐ đang theo dõi)</span>
+                    <span class="normal-case font-semibold text-slate-500">(${monthHdCount} HĐ đến hạn đóng lãi trong tháng / ${periodicContracts.length} HĐ đang vay)</span>
                   </span>
                   <div class="flex items-center gap-1">
                     ${prevM ? `<button type="button" onclick="window.changeDashboardCalMonth && window.changeDashboardCalMonth('${prevM}')" class="p-1 hover:bg-slate-100 rounded text-[10px] font-bold border shadow-xs transition">◀</button>` : ''}
@@ -4292,13 +4328,14 @@ const DEFAULT_CAPITAL_SOURCES = [
                     ${nextM ? `<button type="button" onclick="window.changeDashboardCalMonth && window.changeDashboardCalMonth('${nextM}')" class="p-1 hover:bg-slate-100 rounded text-[10px] font-bold border shadow-xs transition">▶</button>` : ''}
                   </div>
                 </div>
-                <div class="grid grid-cols-7 border-l border-t border-slate-200 rounded-lg overflow-hidden bg-white">
+                ${conLaiNoteHtml}
+                <div class="grid grid-cols-7 border-l border-t border-slate-200 rounded-lg overflow-hidden bg-white ${conLaiContracts.length ? 'mt-2.5' : ''}">
                   ${grid}
                 </div>
                 <div class="text-[9px] text-slate-400 mt-2 font-medium leading-relaxed">
                   Lịch <b>ngày đến hạn đóng lãi</b> = ngày bắt đầu tính lãi <b>+ 1 tháng</b>, rồi lặp mỗi tháng.
                   VD: bắt đầu 12/07 → lần đầu <b>12/08</b> (tháng 7 không có), sau đó 12/09, 12/10…
-                  Ô: số HĐ / vốn / lãi. Hover xem mã HĐ.
+                  Chỉ HĐ <b>Đang vay</b>. Ô: số HĐ / vốn / lãi. Hover xem mã HĐ.
                 </div>
               </div>`;
         })();
