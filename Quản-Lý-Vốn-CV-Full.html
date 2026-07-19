@@ -1012,7 +1012,12 @@ const DEFAULT_CAPITAL_SOURCES = [
     let _lastLeaveBackupAt = 0;
     let _lastEnterSyncAt = 0;
     let _gdriveLifecycleBound = false;
+    let _pendingTokenResolve = null;
+    let _pendingTokenOpts = null;
+    let _tokenRefreshPromise = null;
+    let _gdriveReconnectPromptAt = 0;
     const GDRIVE_BACKUP_NAME = "QuanLyVayTien_Backup.enc.json";
+    const GDRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
     function isAutoGDriveSyncEnabled() {
       return localStorage.getItem('loan_gdrive_auto_sync') !== '0';
@@ -1022,12 +1027,132 @@ const DEFAULT_CAPITAL_SOURCES = [
       showNotification(enabled
         ? "Đã bật tự động đồng bộ Google Drive (vào app / thoát app)"
         : "Đã tắt tự động đồng bộ Google Drive");
-      if (enabled && state.isUnlocked && state.gdriveToken) {
+      if (enabled && state.isUnlocked && isGDriveLinked()) {
         setTimeout(() => autoSyncOnAppEnter(), 300);
       }
       if (window.renderApp) window.renderApp();
     }
     window.setAutoGDriveSync = setAutoGDriveSync;
+
+    /** Đã từng kết nối GDrive (giữ liên kết dù access token hết hạn ~1h) */
+    function isGDriveLinked() {
+      return localStorage.getItem('loan_gdrive_connected') === '1'
+        || !!state.gdriveToken
+        || !!localStorage.getItem('loan_gdrive_token');
+    }
+
+    function saveGDriveAccessToken(accessToken, expiresInSec) {
+      state.gdriveToken = accessToken;
+      try {
+        localStorage.setItem('loan_gdrive_token', accessToken);
+        localStorage.setItem('loan_gdrive_connected', '1');
+        const sec = Math.max(60, Number(expiresInSec) || 3600);
+        // Trừ 2 phút đệm để làm mới trước khi Google từ chối
+        const expAt = Date.now() + (sec - 120) * 1000;
+        localStorage.setItem('loan_gdrive_token_exp', String(expAt));
+        state.gdriveTokenExp = expAt;
+      } catch (_) {}
+    }
+
+    function clearGDriveAccessTokenOnly() {
+      state.gdriveToken = null;
+      state.gdriveTokenExp = 0;
+      try {
+        localStorage.removeItem('loan_gdrive_token');
+        localStorage.removeItem('loan_gdrive_token_exp');
+      } catch (_) {}
+    }
+
+    function isGDriveTokenFresh() {
+      const token = state.gdriveToken || localStorage.getItem('loan_gdrive_token');
+      if (!token) return false;
+      if (!state.gdriveToken) state.gdriveToken = token;
+      const exp = Number(state.gdriveTokenExp || localStorage.getItem('loan_gdrive_token_exp') || 0);
+      if (!exp) return true; // token cũ không có exp — thử dùng, 401 sẽ refresh
+      return Date.now() < exp;
+    }
+
+    function requestGDriveAccessToken(opts = {}) {
+      const silent = !!opts.silent;
+      const prompt = opts.prompt !== undefined ? opts.prompt : (silent ? '' : 'consent');
+      return new Promise((resolve) => {
+        if (window.location.protocol === 'file:') {
+          if (!silent) {
+            showAlert("Google chặn file://", "Google OAuth 2.0 bảo mật KHÔNG cho phép đăng nhập từ đường dẫn tệp file://.\n\n👉 Trên máy tính: Hãy chạy file 'Chạy ứng dụng.bat' và mở trang qua http://localhost:3000\n👉 Trên điện thoại: Hãy truy cập link GitHub https://vxnghi90-ai.github.io/ql-von-cv/");
+          }
+          return resolve(null);
+        }
+        if (!tokenClient) initGoogleAuth();
+        if (!tokenClient) {
+          if (!silent) showAlert("Lỗi kết nối", "Thư viện Google API chưa được tải xong. Vui lòng thử lại sau vài giây!");
+          return resolve(null);
+        }
+        // Nếu đang chờ popup khác — không chồng
+        if (_pendingTokenResolve) {
+          return resolve(null);
+        }
+        _pendingTokenResolve = resolve;
+        _pendingTokenOpts = { silent, interactive: !silent };
+        try {
+          tokenClient.requestAccessToken({ prompt });
+        } catch (e) {
+          console.warn('[GDrive] requestAccessToken error', e);
+          _pendingTokenResolve = null;
+          _pendingTokenOpts = null;
+          resolve(null);
+        }
+        // Timeout: silent không hiện UI — nếu Google không callback thì fail
+        const timeoutMs = silent ? 12000 : 120000;
+        setTimeout(() => {
+          if (_pendingTokenResolve === resolve) {
+            _pendingTokenResolve = null;
+            _pendingTokenOpts = null;
+            resolve(null);
+          }
+        }, timeoutMs);
+      });
+    }
+
+    /**
+     * Đảm bảo có access token hợp lệ.
+     * - silent: làm mới im lặng (prompt '') nếu user đã cấp quyền trước đó
+     * - interactive: cho phép popup consent nếu silent thất bại
+     */
+    async function ensureGDriveToken(opts = {}) {
+      const interactive = !!opts.interactive;
+      const forceRefresh = !!opts.forceRefresh;
+
+      if (!isGDriveLinked() && !interactive) return null;
+
+      if (!forceRefresh && isGDriveTokenFresh() && state.gdriveToken) {
+        return state.gdriveToken;
+      }
+
+      // Gộp các lời gọi refresh đồng thời
+      if (_tokenRefreshPromise) {
+        try { return await _tokenRefreshPromise; } catch (_) { return null; }
+      }
+
+      _tokenRefreshPromise = (async () => {
+        // 1) Thử silent refresh (không popup) — giữ liên kết sau khi thoát app / hết 1h
+        let token = await requestGDriveAccessToken({ silent: true, prompt: '' });
+        if (token) return token;
+
+        // 2) Interactive nếu được phép
+        if (interactive) {
+          token = await requestGDriveAccessToken({ silent: false, prompt: 'consent' });
+          if (token) return token;
+        }
+        return null;
+      })();
+
+      try {
+        return await _tokenRefreshPromise;
+      } finally {
+        _tokenRefreshPromise = null;
+      }
+    }
+    window.ensureGDriveToken = ensureGDriveToken;
 
     function formatSyncTime(ts) {
       const n = Number(ts || 0);
@@ -1099,7 +1224,7 @@ const DEFAULT_CAPITAL_SOURCES = [
 
     function scheduleDebouncedAutoBackup() {
       if (!state.isUnlocked || !state.password) return;
-      const anyCloud = (isAutoGDriveSyncEnabled() && state.gdriveToken);
+      const anyCloud = (isAutoGDriveSyncEnabled() && isGDriveLinked());
       if (!anyCloud) return;
       clearTimeout(_autoBackupTimer);
       // Sao lưu nền sau 20s khi có thay đổi (phòng kill app đột ngột)
@@ -1111,49 +1236,72 @@ const DEFAULT_CAPITAL_SOURCES = [
     }
 
     function initGoogleAuth() {
-      if (typeof google === 'undefined') {
+      if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
         console.warn("Google API Client library not loaded yet.");
         return;
       }
       const clientId = localStorage.getItem('loan_gdrive_client_id') || '794233984174-vpq6ondmeflaj43dfgsab5bk26jmeg7t.apps.googleusercontent.com';
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: clientId,
-        scope: 'https://www.googleapis.com/auth/drive.file',
+        scope: GDRIVE_SCOPE,
         callback: (response) => {
+          const pending = _pendingTokenResolve;
+          const pendingOpts = _pendingTokenOpts || {};
+          _pendingTokenResolve = null;
+          _pendingTokenOpts = null;
+
           if (response.error !== undefined) {
-            return showAlert("Lỗi Google", "Không thể xác thực: " + response.error);
+            console.warn('[GDrive] OAuth error:', response.error);
+            if (pending) pending(null);
+            else if (!pendingOpts.silent) {
+              showAlert("Lỗi Google", "Không thể xác thực: " + response.error);
+            }
+            return;
           }
-          state.gdriveToken = response.access_token;
-          localStorage.setItem('loan_gdrive_token', response.access_token);
+
+          saveGDriveAccessToken(response.access_token, response.expires_in);
           if (localStorage.getItem('loan_gdrive_auto_sync') === null) {
             localStorage.setItem('loan_gdrive_auto_sync', '1');
           }
-          showNotification("Đã kết nối Google Drive — bật tự động đồng bộ");
-          if (window.renderApp) window.renderApp();
-          if (state.isUnlocked && state.password) {
-            setTimeout(() => autoSyncOnAppEnter(), 400);
+
+          if (pending) {
+            pending(response.access_token);
+          } else {
+            // Người dùng bấm Kết nối thủ công (callback không qua Promise)
+            showNotification("Đã kết nối Google Drive — bật tự động đồng bộ");
+            if (window.renderApp) window.renderApp();
+            if (state.isUnlocked && state.password) {
+              setTimeout(() => autoSyncOnAppEnter(), 400);
+            }
           }
         },
       });
     }
 
-    function connectGoogleDrive() {
-      if (window.location.protocol === 'file:') {
-        return showAlert("Google chặn file://", "Google OAuth 2.0 bảo mật KHÔNG cho phép đăng nhập từ đường dẫn tệp file://.\n\n👉 Trên máy tính: Hãy chạy file 'Chạy ứng dụng.bat' và mở trang qua http://localhost:3000\n👉 Trên điện thoại: Hãy truy cập link GitHub https://vxnghi90-ai.github.io/ql-von-cv/");
+    async function connectGoogleDrive() {
+      const token = await ensureGDriveToken({ interactive: true });
+      if (token) {
+        showNotification("Đã kết nối Google Drive — bật tự động đồng bộ");
+        if (window.renderApp) window.renderApp();
+        if (state.isUnlocked && state.password) {
+          setTimeout(() => autoSyncOnAppEnter(), 400);
+        }
       }
-      if (!tokenClient) {
-        initGoogleAuth();
-      }
-      if (!tokenClient) {
-        return showAlert("Lỗi kết nối", "Thư viện Google API chưa được tải xong. Vui lòng thử lại sau vài giây!");
-      }
-      tokenClient.requestAccessToken({ prompt: 'consent' });
     }
 
     function disconnectGoogleDrive() {
-      state.gdriveToken = null;
-      localStorage.removeItem('loan_gdrive_token');
-      localStorage.removeItem('loan_gdrive_file_id');
+      // Thu hồi token GIS nếu còn
+      try {
+        const t = state.gdriveToken || localStorage.getItem('loan_gdrive_token');
+        if (t && typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
+          google.accounts.oauth2.revoke(t, () => {});
+        }
+      } catch (_) {}
+      clearGDriveAccessTokenOnly();
+      try {
+        localStorage.removeItem('loan_gdrive_connected');
+        localStorage.removeItem('loan_gdrive_file_id');
+      } catch (_) {}
       showNotification("Đã ngắt kết nối Google Drive!");
       if (window.renderApp) window.renderApp();
     }
@@ -1161,15 +1309,22 @@ const DEFAULT_CAPITAL_SOURCES = [
     async function checkGoogleDriveResponse(res, opts = {}) {
       const silent = !!opts.silent;
       if (res.status === 401) {
-        state.gdriveToken = null;
-        localStorage.removeItem('loan_gdrive_token');
-        if (!silent) {
-          if (window.renderApp) window.renderApp();
-          showConfirm("Kết nối hết hạn", "Phiên làm việc Google Drive đã hết hạn. Bạn có muốn kết nối lại ngay?", () => {
-            connectGoogleDrive();
-          });
+        clearGDriveAccessTokenOnly(); // giữ loan_gdrive_connected + file_id
+        // Báo hết hạn — caller sẽ thử refresh 1 lần
+        const err = new Error("Phiên làm việc Google Drive đã hết hạn");
+        err.code = 'GDRIVE_TOKEN_EXPIRED';
+        // Chỉ hỏi user nếu silent refresh đã thất bại ở tầng trên
+        if (!silent && opts.askReconnect) {
+          const now = Date.now();
+          if (now - _gdriveReconnectPromptAt > 30000) {
+            _gdriveReconnectPromptAt = now;
+            if (window.renderApp) window.renderApp();
+            showConfirm("Cần đăng nhập Google lại", "Phiên Google Drive hết hạn và không làm mới được tự động (thường do trình duyệt chặn cookie Google hoặc hết phiên đăng nhập Google). Kết nối lại ngay?", () => {
+              connectGoogleDrive();
+            });
+          }
         }
-        throw new Error("Phiên làm việc Google Drive đã hết hạn");
+        throw err;
       }
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -1178,34 +1333,60 @@ const DEFAULT_CAPITAL_SOURCES = [
       }
     }
 
+    /** Gọi API Drive với tự làm mới token 1 lần khi 401 */
+    async function gdriveFetch(url, init = {}, opts = {}) {
+      const silent = !!opts.silent;
+      const interactive = !!opts.interactive;
+      await ensureGDriveToken({ interactive: interactive && !silent });
+      if (!state.gdriveToken) {
+        if (!silent) {
+          showConfirm("Chưa kết nối Google Drive", "Bạn có muốn kết nối Google Drive ngay?", () => connectGoogleDrive());
+        }
+        throw new Error("Chưa có phiên Google Drive");
+      }
+      const headers = Object.assign({}, init.headers || {}, {
+        'Authorization': `Bearer ${state.gdriveToken}`
+      });
+      let res = await fetch(url, Object.assign({}, init, { headers }));
+      if (res.status === 401) {
+        // Access token hết hạn (~1h) — silent refresh rồi thử lại 1 lần
+        clearGDriveAccessTokenOnly();
+        const newTok = await ensureGDriveToken({ forceRefresh: true, interactive: false });
+        if (!newTok && interactive && !silent) {
+          // Cho user popup nếu silent fail
+          await ensureGDriveToken({ forceRefresh: true, interactive: true });
+        }
+        if (!state.gdriveToken) {
+          await checkGoogleDriveResponse(res, { silent, askReconnect: !silent });
+        }
+        headers['Authorization'] = `Bearer ${state.gdriveToken}`;
+        res = await fetch(url, Object.assign({}, init, { headers }));
+      }
+      await checkGoogleDriveResponse(res, { silent, askReconnect: false });
+      return res;
+    }
+
     async function resolveGDriveBackupFileId(opts = {}) {
       const silent = !!opts.silent;
       const cached = localStorage.getItem('loan_gdrive_file_id');
       if (cached) return cached;
 
       const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='${GDRIVE_BACKUP_NAME}' and trashed=false&fields=files(id,name,modifiedTime)`;
-      const searchRes = await fetch(searchUrl, {
-        headers: { 'Authorization': `Bearer ${state.gdriveToken}` }
-      });
-      await checkGoogleDriveResponse(searchRes, { silent });
+      const searchRes = await gdriveFetch(searchUrl, {}, { silent });
       const searchData = await searchRes.json();
 
       let fileId = '';
       if (searchData.files && searchData.files.length > 0) {
         fileId = searchData.files[0].id;
       } else {
-        const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+        const createRes = await gdriveFetch('https://www.googleapis.com/drive/v3/files', {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${state.gdriveToken}`,
-            'Content-Type': 'application/json'
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: GDRIVE_BACKUP_NAME,
             mimeType: 'application/json'
           })
-        });
-        await checkGoogleDriveResponse(createRes, { silent });
+        }, { silent });
         const createData = await createRes.json();
         fileId = createData.id;
       }
@@ -1218,10 +1399,7 @@ const DEFAULT_CAPITAL_SOURCES = [
       let fileId = localStorage.getItem('loan_gdrive_file_id');
       if (!fileId) {
         const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='${GDRIVE_BACKUP_NAME}' and trashed=false&fields=files(id,name,modifiedTime)`;
-        const searchRes = await fetch(searchUrl, {
-          headers: { 'Authorization': `Bearer ${state.gdriveToken}` }
-        });
-        await checkGoogleDriveResponse(searchRes, { silent });
+        const searchRes = await gdriveFetch(searchUrl, {}, { silent });
         const searchData = await searchRes.json();
         if (!searchData.files || searchData.files.length === 0) return null;
         fileId = searchData.files[0].id;
@@ -1229,24 +1407,34 @@ const DEFAULT_CAPITAL_SOURCES = [
       }
 
       const downloadUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
-      const downloadRes = await fetch(downloadUrl, {
-        headers: { 'Authorization': `Bearer ${state.gdriveToken}` }
-      });
-      if (downloadRes.status === 404) {
-        localStorage.removeItem('loan_gdrive_file_id');
-        return null;
+      try {
+        const downloadRes = await gdriveFetch(downloadUrl, {}, { silent });
+        const encrypted = await downloadRes.text();
+        return { fileId, encrypted };
+      } catch (e) {
+        // File bị xóa trên Drive → xóa cache id, coi như chưa có backup
+        if (e && /404|not found/i.test(String(e.message || e))) {
+          localStorage.removeItem('loan_gdrive_file_id');
+          return null;
+        }
+        throw e;
       }
-      await checkGoogleDriveResponse(downloadRes, { silent });
-      const encrypted = await downloadRes.text();
-      return { fileId, encrypted };
     }
 
     async function backupToGoogleDrive(opts = {}) {
       const silent = !!opts.silent;
       const keepalive = !!opts.keepalive;
-      if (!state.gdriveToken) {
+      if (!isGDriveLinked()) {
         if (silent) return false;
         return connectGoogleDrive();
+      }
+      // Làm mới token nếu hết hạn (không xóa liên kết)
+      const tok = await ensureGDriveToken({ interactive: !silent });
+      if (!tok) {
+        if (!silent) {
+          showConfirm("Cần đăng nhập Google lại", "Không lấy được phiên Google Drive. Kết nối lại ngay?", () => connectGoogleDrive());
+        }
+        return false;
       }
       if (!state.password) {
         if (!silent) showAlert("Lỗi", "Chưa thiết lập mã PIN bảo mật!");
@@ -1263,16 +1451,12 @@ const DEFAULT_CAPITAL_SOURCES = [
         if (!fileId) throw new Error("Không thể khởi tạo hoặc tìm thấy ID tệp tin trên Google Drive");
 
         const uploadUrl = `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`;
-        const uploadRes = await fetch(uploadUrl, {
+        await gdriveFetch(uploadUrl, {
           method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${state.gdriveToken}`,
-            'Content-Type': 'application/json'
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: encrypted,
           keepalive: keepalive
-        });
-        await checkGoogleDriveResponse(uploadRes, { silent });
+        }, { silent });
 
         state.lastLocalChangeAt = Math.max(Number(state.lastLocalChangeAt || 0), backupAt);
         localStorage.setItem('loan_last_local_change', String(state.lastLocalChangeAt));
@@ -1284,7 +1468,7 @@ const DEFAULT_CAPITAL_SOURCES = [
         return true;
       } catch (err) {
         console.error("Lỗi Google Drive Backup:", err);
-        if (!silent && err.message !== "Phiên làm việc Google Drive đã hết hạn") {
+        if (!silent && err.message !== "Phiên làm việc Google Drive đã hết hạn" && err.message !== "Chưa có phiên Google Drive") {
           showAlert("Lỗi Sao Lưu", "Không thể lưu trữ lên Google Drive: " + err.message);
         }
         return false;
@@ -1295,9 +1479,16 @@ const DEFAULT_CAPITAL_SOURCES = [
 
     async function restoreFromGoogleDrive(opts = {}) {
       const silent = !!opts.silent;
-      if (!state.gdriveToken) {
+      if (!isGDriveLinked()) {
         if (silent) return false;
         return connectGoogleDrive();
+      }
+      const tok = await ensureGDriveToken({ interactive: !silent });
+      if (!tok) {
+        if (!silent) {
+          showConfirm("Cần đăng nhập Google lại", "Không lấy được phiên Google Drive. Kết nối lại ngay?", () => connectGoogleDrive());
+        }
+        return false;
       }
       if (!state.password) {
         if (!silent) showAlert("Lỗi", "Chưa thiết lập mã PIN bảo mật!");
@@ -1331,7 +1522,7 @@ const DEFAULT_CAPITAL_SOURCES = [
         }
       } catch (err) {
         console.error("Lỗi Google Drive Restore:", err);
-        if (!silent && err.message !== "Phiên làm việc Google Drive đã hết hạn") {
+        if (!silent && err.message !== "Phiên làm việc Google Drive đã hết hạn" && err.message !== "Chưa có phiên Google Drive") {
           showAlert("Lỗi Khôi Phục", "Không thể khôi phục từ Google Drive: " + err.message);
         }
         return false;
@@ -1341,7 +1532,7 @@ const DEFAULT_CAPITAL_SOURCES = [
     function recomputeCloudDirty() {
       const localAt = Number(state.lastLocalChangeAt || localStorage.getItem('loan_last_local_change') || 0);
       let dirty = false;
-      if (state.gdriveToken && isAutoGDriveSyncEnabled()) {
+      if (isGDriveLinked() && isAutoGDriveSyncEnabled()) {
         if (localAt > Number(localStorage.getItem('loan_last_gdrive_sync') || 0)) dirty = true;
       }
       state.dataDirtySinceBackup = dirty;
@@ -1350,7 +1541,7 @@ const DEFAULT_CAPITAL_SOURCES = [
 
     async function autoBackupAllConnected(opts = {}) {
       const jobs = [];
-      if (isAutoGDriveSyncEnabled() && state.gdriveToken) {
+      if (isAutoGDriveSyncEnabled() && isGDriveLinked()) {
         jobs.push(backupToGoogleDrive(opts).catch(err => console.warn('[GDrive] backup fail', err)));
       }
       if (!jobs.length) return;
@@ -1368,8 +1559,16 @@ const DEFAULT_CAPITAL_SOURCES = [
       const candidates = [];
 
       // --- Google Drive ---
-      if (isAutoGDriveSyncEnabled() && state.gdriveToken) {
+      if (isAutoGDriveSyncEnabled() && isGDriveLinked()) {
         try {
+          // Tự làm mới access token (hết hạn ~1h) — không xóa liên kết
+          const tok = await ensureGDriveToken({ interactive: false });
+          if (!tok) {
+            console.warn('[GDrive] Auto sync: chưa lấy được token (silent). Giữ liên kết; user có thể bấm Kết nối lại nếu cần.');
+            // Không xóa loan_gdrive_connected — UI vẫn hiện "đã liên kết"
+            if (window.renderApp) window.renderApp();
+            return;
+          }
           const bundle = await fetchCloudBackupBundle({ silent: true });
           if (!bundle) {
             candidates.push({ provider: 'gdrive', at: 0, missing: true });
@@ -1549,6 +1748,7 @@ const DEFAULT_CAPITAL_SOURCES = [
       lastLocalChangeAt: 0,
       dataDirtySinceBackup: false,
       gdriveToken: null,
+      gdriveTokenExp: 0,
       activeTab: 'dashboard',
       dashboardSubTab: 'capital',
       searchTerm: '',
@@ -1599,8 +1799,16 @@ const DEFAULT_CAPITAL_SOURCES = [
     function initSecurityAndLoad() {
       try {
         initGoogleAuth();
+        // Khôi phục trạng thái liên kết (kể cả khi access token đã hết hạn)
         if (localStorage.getItem('loan_gdrive_token')) {
           state.gdriveToken = localStorage.getItem('loan_gdrive_token');
+        }
+        if (localStorage.getItem('loan_gdrive_token_exp')) {
+          state.gdriveTokenExp = Number(localStorage.getItem('loan_gdrive_token_exp') || 0);
+        }
+        // Token cũ (trước khi có flag connected) → coi như đã liên kết
+        if (localStorage.getItem('loan_gdrive_token') && localStorage.getItem('loan_gdrive_connected') !== '1') {
+          localStorage.setItem('loan_gdrive_connected', '1');
         }
         state.lastLocalChangeAt = Number(localStorage.getItem('loan_last_local_change') || 0);
         state.dataDirtySinceBackup = false;
@@ -5384,7 +5592,7 @@ const DEFAULT_CAPITAL_SOURCES = [
                 </p>
               </div>
 
-              ${state.gdriveToken ? `
+              ${isGDriveLinked() ? `
               <div class="mb-4 p-3 rounded-xl border ${isAutoGDriveSyncEnabled() ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'}">
                 <label class="flex items-start gap-2 cursor-pointer">
                   <input type="checkbox" class="mt-0.5 w-4 h-4 accent-emerald-600" ${isAutoGDriveSyncEnabled() ? 'checked' : ''} onchange="window.setAutoGDriveSync && window.setAutoGDriveSync(this.checked)" />
@@ -5394,17 +5602,20 @@ const DEFAULT_CAPITAL_SOURCES = [
                   <div>• Lần đồng bộ cloud gần nhất: <b class="text-slate-700">${formatSyncTime(localStorage.getItem('loan_last_cloud_sync'))}</b></div>
                   <div>• Thay đổi local gần nhất: <b class="text-slate-700">${formatSyncTime(state.lastLocalChangeAt || localStorage.getItem('loan_last_local_change'))}</b></div>
                   <div>• Trạng thái: <b class="${state.dataDirtySinceBackup ? 'text-amber-600' : 'text-emerald-600'}">${state.dataDirtySinceBackup ? 'Có thay đổi chưa đẩy cloud' : 'Đã đồng bộ'}</b></div>
+                  <div>• Phiên Google: <b class="${isGDriveTokenFresh() ? 'text-emerald-600' : 'text-amber-600'}">${isGDriveTokenFresh() ? 'Còn hiệu lực (tự làm mới khi cần)' : 'Hết hạn tạm — app sẽ tự xin lại khi đồng bộ'}</b></div>
                 </div>
+                <p class="mt-2 text-[9px] text-slate-400 leading-relaxed pl-6">Access token Google chỉ sống ~1 giờ. App <b>giữ liên kết</b> và tự xin token mới im lặng khi vào app / đồng bộ. Chỉ cần bấm kết nối lại nếu Google đăng xuất hoặc trình duyệt chặn cookie bên thứ 3.</p>
               </div>
               ` : ''}
               
               <div class="flex flex-wrap gap-2">
-                ${state.gdriveToken
+                ${isGDriveLinked()
                   ? `
-                  <span class="w-full block text-xs font-semibold text-emerald-600 mb-1">✓ Đã kết nối với Google Drive${isAutoGDriveSyncEnabled() ? ' · Auto-sync BẬT' : ' · Auto-sync TẮT'}</span>
+                  <span class="w-full block text-xs font-semibold text-emerald-600 mb-1">✓ Đã liên kết Google Drive${isAutoGDriveSyncEnabled() ? ' · Auto-sync BẬT' : ' · Auto-sync TẮT'}${isGDriveTokenFresh() ? '' : ' · đang chờ làm mới phiên'}</span>
                   <button onclick="window.autoSyncOnAppEnter && window.autoSyncOnAppEnter()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-4 py-2.5 rounded-xl">🔄 Đồng bộ ngay</button>
                   <button onclick="window.backupToGoogleDrive && window.backupToGoogleDrive()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-4 py-2.5 rounded-xl">☁️ Sao lưu lên Cloud</button>
                   <button onclick="window.restoreFromGoogleDrive && window.restoreFromGoogleDrive()" class="bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2.5 rounded-xl">📥 Khôi phục từ Cloud</button>
+                  <button onclick="window.ensureGDriveToken && window.ensureGDriveToken({ interactive: true }).then(function(t){ if(t){ if(window.showNotification) window.showNotification('Đã làm mới phiên Google Drive'); if(window.renderApp) window.renderApp(); } else if(window.showAlert) window.showAlert('Google Drive', 'Không làm mới được phiên. Thử Kết nối lại hoặc kiểm tra đăng nhập Google trên trình duyệt.'); });" class="bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-semibold text-xs px-3 py-2.5 rounded-xl">🔑 Làm mới phiên</button>
                   <button onclick="window.disconnectGoogleDrive && window.disconnectGoogleDrive()" class="text-rose-600 hover:bg-rose-50 font-bold border border-rose-200 px-3 py-2.5 rounded-xl text-xs">Ngắt kết nối</button>
                   `
                   : `<button onclick="window.connectGoogleDrive && window.connectGoogleDrive()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-4 py-2.5 rounded-xl">🔗 Kết nối Google Drive</button>`
