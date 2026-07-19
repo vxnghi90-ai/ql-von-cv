@@ -2134,13 +2134,101 @@ const DEFAULT_CAPITAL_SOURCES = [
       };
     }
 
+    /**
+     * Tính lãi khi tất toán / trả gốc
+     * mode: 'den_ngay_tra' = lãi đến đúng ngày khách trả
+     *       'du_thang'      = làm tròn đủ tháng (có ngày lẻ → tính thêm 1 tháng đầy)
+     */
+    function calculateSettlementInterest(contract, ngayTraYMD, mode = 'den_ngay_tra') {
+      if (!contract) return { lai: 0, laiPhatSinh: 0, laiNoCu: 0, fullMonths: 0, remDays: 0, mode, note: '' };
+      const ngayTra = ngayTraYMD || todayYMD();
+      const laiNoCu = Math.max(0, Math.round(Number(contract.laiConNo || 0)));
+      const soTien = Number(contract.SoTienVay || 0);
+      const laiNgay = Number(contract.LaiNgayTrenTrieu || 0);
+      const baseMonth30 = Math.round((soTien / 1000000) * laiNgay * 30);
+      const dailyInterest = Math.round((soTien / 1000000) * laiNgay);
+
+      // HĐ đã trả gốc, chỉ còn lãi đóng băng
+      if (contract.TrangThai === 'Còn lãi' || contract.LaiDongBang) {
+        return {
+          lai: laiNoCu,
+          laiPhatSinh: 0,
+          laiNoCu,
+          fullMonths: 0,
+          remDays: 0,
+          mode,
+          note: 'Lãi còn lại (đã khóa sau trả gốc)'
+        };
+      }
+
+      if (contract.LoaiHopDong === 'LaiCoDinhNgay') {
+        const r = calculateInterestFromNgayVaySauDao(contract, ngayTra);
+        const laiPhatSinh = Math.max(0, Math.round(Number(r.laiConNo || 0)));
+        return {
+          lai: laiPhatSinh + laiNoCu,
+          laiPhatSinh,
+          laiNoCu,
+          fullMonths: 0,
+          remDays: 0,
+          mode,
+          note: 'Lãi cố định'
+        };
+      }
+
+      const r = calculateInterestFromNgayVaySauDao(contract, ngayTra);
+      let fullMonths = Math.max(0, Number(r.fullMonths || 0));
+      let remDays = Math.max(0, Number(r.remDays || 0));
+      let extraLai = Math.max(0, Number(r.extraLai || 0));
+      let laiPhatSinh = 0;
+      let note = '';
+
+      if (mode === 'du_thang') {
+        // Đủ tháng: mỗi tháng tròn 30d; nếu còn ngày lẻ → + thêm 1 tháng đầy đủ
+        let monthsCharge = fullMonths;
+        if (remDays > 0) monthsCharge += 1;
+        // Nếu chưa đủ 1 tháng nhưng đã qua ít nhất 1 ngày → vẫn tính 1 tháng
+        if (monthsCharge === 0) {
+          const start = r.ngayVaySauDaoStr;
+          if (start && calculateStandardDays(start, ngayTra) > 0) monthsCharge = 1;
+        }
+        laiPhatSinh = monthsCharge * baseMonth30 + extraLai;
+        note = `Đủ tháng: ${monthsCharge} tháng × ${formatVND(baseMonth30)}${extraLai ? ` + dư đầu ${formatVND(extraLai)}` : ''}`;
+        fullMonths = monthsCharge;
+        remDays = 0;
+      } else {
+        // Đến ngày trả: tính đúng số ngày
+        if (fullMonths <= 0) {
+          laiPhatSinh = remDays * dailyInterest + extraLai;
+        } else {
+          laiPhatSinh = fullMonths * baseMonth30 + remDays * dailyInterest + extraLai;
+        }
+        note = `Đến ngày trả: ${fullMonths}th + ${remDays}d`;
+      }
+
+      laiPhatSinh = Math.max(0, Math.round(laiPhatSinh));
+      return {
+        lai: laiPhatSinh + laiNoCu,
+        laiPhatSinh,
+        laiNoCu,
+        fullMonths,
+        remDays,
+        mode,
+        note,
+        ngayVaySauDaoStr: r.ngayVaySauDaoStr
+      };
+    }
+
     function calculateContractInterest(contract) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       // Dùng ngày local — không dùng toISOString (lệch UTC)
-      const endCalStr = (contract.TrangThai === 'Đã tất toán' && contract.NgayTatToan)
+      const isSettledFull = contract.TrangThai === 'Đã tất toán';
+      const isConLai = contract.TrangThai === 'Còn lãi' || !!contract.LaiDongBang;
+      const endCalStr = (isSettledFull && contract.NgayTatToan)
         ? (toInputDate(contract.NgayTatToan) || String(contract.NgayTatToan).slice(0, 10))
-        : todayYMD();
+        : (isConLai && contract.NgayTraGoc)
+          ? (toInputDate(contract.NgayTraGoc) || String(contract.NgayTraGoc).slice(0, 10))
+          : todayYMD();
       
       let soNgayVay = calculateStandardDays(contract.NgayVay, endCalStr);
 
@@ -2159,18 +2247,30 @@ const DEFAULT_CAPITAL_SOURCES = [
         laiThangChuan30Ngay = Number(contract.SoLaiCoDinh || 0);
       }
 
-      const sauDaoResult = calculateInterestFromNgayVaySauDao(contract, endCalStr);
-      // Lãi còn nợ = lãi phát sinh từ Ngày vay sau đáo → nay + nợ lãi cũ (đóng thiếu)
-      const laiPhatSinh = Math.max(0, Math.round(Number(sauDaoResult.laiConNo || 0)));
-      const laiNoCu = Math.max(0, Math.round(Number(contract.laiConNo || 0)));
-      const laiConNo = laiPhatSinh + laiNoCu;
+      const gocDaTra = contractPayments.filter(p => p.LoaiThanhToan === 'Tất toán').reduce((sum, p) => sum + Number(p.SoTienTra), 0);
+      const duNoGocHienTai = Math.max(0, Number(contract.SoTienVay || 0) - gocDaTra);
+
+      let laiPhatSinh = 0;
+      let laiNoCu = Math.max(0, Math.round(Number(contract.laiConNo || 0)));
+      let laiConNo = 0;
+      let sauDaoResult = { fullMonths: 0, remDays: 0, ngayVaySauDaoStr: ngayTinhLaiStr, extraDays: 0, extraLai: 0 };
+
+      if (isConLai || isSettledFull) {
+        // Đã trả gốc / tất toán: không phát sinh thêm lãi — chỉ theo dõi nợ lãi còn lại (đóng băng)
+        laiPhatSinh = 0;
+        laiConNo = isSettledFull ? 0 : laiNoCu;
+        sauDaoResult.ngayVaySauDaoStr = contract.NgayTraGoc || contract.NgayTatToan || ngayTinhLaiStr;
+      } else {
+        sauDaoResult = calculateInterestFromNgayVaySauDao(contract, endCalStr);
+        // Lãi còn nợ = lãi phát sinh từ Ngày vay sau đáo → nay + nợ lãi cũ (đóng thiếu)
+        laiPhatSinh = Math.max(0, Math.round(Number(sauDaoResult.laiConNo || 0)));
+        laiConNo = laiPhatSinh + laiNoCu;
+      }
       const tongLaiPhatSinh = laiConNo;
       const ngayVaySauDaoStr = sauDaoResult.ngayVaySauDaoStr || ngayTinhLaiStr;
 
       const ngayDongLaiGanNhat = laiPayments.length > 0 ? laiPayments[0].NgayThanhToan : null;
       const laiDaTra = contractPayments.filter(p => p.LoaiThanhToan === 'Trả lãi').reduce((sum, p) => sum + Number(p.SoTienTra || 0), 0);
-      const gocDaTra = contractPayments.filter(p => p.LoaiThanhToan === 'Tất toán').reduce((sum, p) => sum + Number(p.SoTienTra), 0);
-      const duNoGocHienTai = Math.max(0, contract.SoTienVay - gocDaTra);
 
       let chiPhiVonLuyKe = 0;
       const lichSuNguon = contract.LichSuNguon || [{ NgayBatDau: contract.NgayVay, NgayKetThuc: null, MaNguon: contract.MaNguon, SoTien: contract.SoTienVay }];
@@ -2198,7 +2298,8 @@ const DEFAULT_CAPITAL_SOURCES = [
         duNoGocHienTai,
         chiPhiVonLuyKe,
         chiPhiVonDaTra,
-        laQuaHan: contract.TrangThai === 'Đang vay' && daoHanDate && today > daoHanDate,
+        laQuaHan: (contract.TrangThai === 'Đang vay' || contract.TrangThai === 'Còn lãi') && daoHanDate && today > daoHanDate,
+        isConLai: contract.TrangThai === 'Còn lãi' || !!contract.LaiDongBang,
         nguonVon: activeSource.TenNguon,
         laiSuatDauVao: activeSource.LaiSuatThang,
         activeMaNguon: activeSeg.MaNguon,
@@ -2444,6 +2545,9 @@ const DEFAULT_CAPITAL_SOURCES = [
 
           stats.laiThuTrongNgay += (calc.duNoGocHienTai / 1000000) * contract.LaiNgayTrenTrieu;
           calc.laQuaHan ? stats.quaHanCount++ : stats.dangVayCount++;
+        } else if (contract.TrangThai === 'Còn lãi') {
+          // Đã trả gốc, còn lãi chưa thu — vẫn cộng vào lãi cần thu, không tính dư nợ gốc
+          stats.tongLaiConNo += calc.laiConNo;
         } else if (contract.TrangThai === 'Đã tất toán') { stats.tatToanCount++; }
       });
 
@@ -3245,107 +3349,176 @@ const DEFAULT_CAPITAL_SOURCES = [
 
     function handleSavePayment(e) {
       e.preventDefault(); const form = e.target;
-      const p = { 
-        MaThanhToan: Math.random().toString(36).substring(2, 10), 
-        MaHopDong: form.MaHopDong.value, 
-        NgayThanhToan: form.NgayThanhToan.value, 
-        SoTienTra: Number(form.SoTienTra.value), 
-        TienKhuyenMai: Number(form.TienKhuyenMai ? form.TienKhuyenMai.value : 0), 
-        LoaiThanhToan: form.LoaiThanhToan.value, 
-        GhiChu: form.GhiChu.value.trim(), 
-        TrangThaiThu: form.TrangThaiThu.value, 
-        NguoiThuHo: form.TrangThaiThu === 'NhanVienGiu' ? form.NguoiThuHo.value.trim() : '',
+      const loai = form.LoaiThanhToan.value;
+      const c = state.contracts.find(x => x.MaHopDong === form.MaHopDong.value);
+      if (!c) return showAlert("Lỗi", "Không tìm thấy hợp đồng!");
+
+      const common = {
+        MaHopDong: form.MaHopDong.value,
+        NgayThanhToan: form.NgayThanhToan.value,
+        TienKhuyenMai: Number(form.TienKhuyenMai ? form.TienKhuyenMai.value : 0),
+        GhiChu: (form.GhiChu.value || '').trim(),
+        TrangThaiThu: form.TrangThaiThu.value,
+        NguoiThuHo: form.TrangThaiThu.value === 'NhanVienGiu' ? form.NguoiThuHo.value.trim() : '',
         KyLaiTu: form.KyLaiTu ? parseDateToISO(form.KyLaiTu.value) : '',
         KyLaiDen: form.KyLaiDen ? parseDateToISO(form.KyLaiDen.value) : ''
       };
+
+      // ========== TẤT TOÁN GỐC (+ LÃI) ==========
+      if (loai === 'Tất toán') {
+        const calc = calculateContractInterest(c);
+        const soTienGoc = Number(form.SoTienGoc ? form.SoTienGoc.value : form.SoTienTra.value);
+        const soTienLai = Number(form.SoTienLai ? form.SoTienLai.value : 0);
+        const cachTinhLai = (form.CachTinhLai && form.CachTinhLai.value) ? form.CachTinhLai.value : 'den_ngay_tra';
+        if (soTienGoc < 0 || soTienLai < 0) return showAlert("Lỗi", "Số tiền không hợp lệ!");
+        if (soTienGoc <= 0 && soTienLai <= 0) return showAlert("Lỗi", "Nhập số tiền gốc và/hoặc lãi cần thu!");
+
+        const duNoGoc = calc.duNoGocHienTai;
+        const sett = calculateSettlementInterest(c, common.NgayThanhToan, cachTinhLai);
+        const laiCanDong = sett.lai;
+
+        // Phiếu tất toán gốc
+        if (soTienGoc > 0) {
+          const pGoc = {
+            MaThanhToan: 'TTG_' + Math.random().toString(36).substring(2, 10).toUpperCase(),
+            ...common,
+            SoTienTra: soTienGoc,
+            LoaiThanhToan: 'Tất toán',
+            CachTinhLai: cachTinhLai,
+            SoTienLaiCanDong: laiCanDong,
+            SoTienLaiThu: soTienLai,
+            GhiChu: (common.GhiChu ? common.GhiChu + ' | ' : '') + `Tất toán gốc ${formatVND(soTienGoc)}` + (soTienLai > 0 ? ` + lãi ${formatVND(soTienLai)}` : ' (chưa thu lãi)')
+          };
+          state.payments.unshift(pGoc);
+        }
+
+        // Phiếu thu lãi (nếu có thu)
+        if (soTienLai > 0) {
+          const pLai = {
+            MaThanhToan: 'TTL_' + Math.random().toString(36).substring(2, 10).toUpperCase(),
+            ...common,
+            SoTienTra: soTienLai,
+            TienKhuyenMai: 0,
+            LoaiThanhToan: 'Trả lãi',
+            CachTinhLai: cachTinhLai,
+            KyLaiTu: sett.ngayVaySauDaoStr || c.NgayBatDauTinhLai || c.NgayVay,
+            KyLaiDen: common.NgayThanhToan,
+            GhiChu: (common.GhiChu ? common.GhiChu + ' | ' : '') + `Thu lãi khi tất toán (${cachTinhLai === 'du_thang' ? 'đủ tháng' : 'đến ngày trả'})`
+          };
+          state.payments.unshift(pLai);
+        }
+
+        // Cập nhật trạng thái HĐ
+        const gocCon = Math.max(0, duNoGoc - soTienGoc);
+        const laiCon = Math.max(0, laiCanDong - soTienLai);
+        let updatedC = { ...c };
+
+        if (gocCon <= 0) {
+          // Đã trả hết gốc
+          updatedC.NgayTraGoc = common.NgayThanhToan;
+          updatedC.LaiDongBang = true;
+          updatedC.CachTinhLaiTatToan = cachTinhLai;
+          if (laiCon > 0) {
+            updatedC.TrangThai = 'Còn lãi';
+            updatedC.laiConNo = laiCon;
+            updatedC.NgayTatToan = null;
+            showNotification(`Đã trả gốc. Còn lãi chưa thu: ${formatVND(laiCon)}`);
+          } else {
+            updatedC.TrangThai = 'Đã tất toán';
+            updatedC.laiConNo = 0;
+            updatedC.NgayTatToan = common.NgayThanhToan;
+            showNotification("Tất toán gốc + lãi thành công!");
+          }
+        } else {
+          // Trả một phần gốc
+          updatedC.TrangThai = 'Đang vay';
+          updatedC.laiConNo = laiCon > 0 ? laiCon : Number(c.laiConNo || 0);
+          showNotification(`Đã thu gốc ${formatVND(soTienGoc)}. Còn dư nợ gốc ${formatVND(gocCon)}`);
+        }
+
+        state.contracts = state.contracts.map(x => x.MaHopDong === c.MaHopDong ? updatedC : x);
+        saveStateOfflineAndRefresh(true);
+        closeModal('payment-modal');
+        setTimeout(() => { if (window.renderApp) window.renderApp(); }, 80);
+        return;
+      }
+
+      // ========== TRẢ LÃI (kỳ hạn / còn lãi sau trả gốc) ==========
+      const p = {
+        MaThanhToan: Math.random().toString(36).substring(2, 10),
+        ...common,
+        SoTienTra: Number(form.SoTienTra.value),
+        LoaiThanhToan: 'Trả lãi'
+      };
       if (p.SoTienTra <= 0) return showAlert("Lỗi", "Số tiền đóng không hợp lệ");
 
-      const c = state.contracts.find(x => x.MaHopDong === p.MaHopDong);
-      if (c) {
-        const isLai = p.LoaiThanhToan === 'Trả lãi';
-        let soTienPhaiDong = 0;
-        if (isLai) {
-          const priorCount = (state.payments || []).filter(pay => pay.MaHopDong === p.MaHopDong && pay.LoaiThanhToan === 'Trả lãi').length;
-          const isFirst = priorCount === 0;
-          soTienPhaiDong = calculateInterestForPeriod(c, p.KyLaiTu, p.KyLaiDen, isFirst) + Number(c.laiConNo || 0);
-        } else {
-          const calc = calculateContractInterest(c);
-          soTienPhaiDong = (calc.duNoGocHienTai || c.SoTienVay) + Number(c.laiConNo || 0);
-        }
+      let soTienPhaiDong = 0;
+      if (c.TrangThai === 'Còn lãi' || c.LaiDongBang) {
+        soTienPhaiDong = Math.max(0, Number(c.laiConNo || 0));
+      } else {
+        const priorCount = (state.payments || []).filter(pay => pay.MaHopDong === p.MaHopDong && pay.LoaiThanhToan === 'Trả lãi').length;
+        const isFirst = priorCount === 0;
+        soTienPhaiDong = calculateInterestForPeriod(c, p.KyLaiTu, p.KyLaiDen, isFirst) + Number(c.laiConNo || 0);
+      }
 
-        const chenhLech = p.SoTienTra + p.TienKhuyenMai - soTienPhaiDong;
-        if (chenhLech < 0) {
-          const soTienThieu = Math.abs(chenhLech);
-          p.soTienNoConLai = soTienThieu;
-          c.laiConNo = soTienThieu;
-          p.GhiChu = `Đóng thiếu - Ghi nhận nợ ${formatVND(soTienThieu)}` + (p.GhiChu ? ` (${p.GhiChu})` : '');
-        } else {
-          c.laiConNo = 0;
-          if (chenhLech > 0) {
-            const radios = form.elements['luaChonThuThua'];
-            let chosen = '';
-            if (radios) {
-              if (radios.value) {
-                chosen = radios.value;
-              } else {
-                for (let r of radios) {
-                  if (r.checked) chosen = r.value;
-                }
-              }
-            }
-            if (!chosen) {
-              return showAlert("Lỗi", "Vui lòng chọn phương án xử lý số tiền thu thừa!");
-            }
-            p.luaChonThuThua = chosen;
-            if (chosen === 'transfer_next_month') {
-              p.soTienThuaChuyenKySau = chenhLech;
-            }
+      const chenhLech = p.SoTienTra + p.TienKhuyenMai - soTienPhaiDong;
+      if (chenhLech < 0) {
+        const soTienThieu = Math.abs(chenhLech);
+        p.soTienNoConLai = soTienThieu;
+        c.laiConNo = soTienThieu;
+        p.GhiChu = `Đóng thiếu - Ghi nhận nợ ${formatVND(soTienThieu)}` + (p.GhiChu ? ` (${p.GhiChu})` : '');
+      } else {
+        c.laiConNo = 0;
+        if (chenhLech > 0 && c.TrangThai !== 'Còn lãi') {
+          const radios = form.elements['luaChonThuThua'];
+          let chosen = '';
+          if (radios) {
+            if (radios.value) chosen = radios.value;
+            else { for (let r of radios) { if (r.checked) chosen = r.value; } }
           }
+          if (!chosen) return showAlert("Lỗi", "Vui lòng chọn phương án xử lý số tiền thu thừa!");
+          p.luaChonThuThua = chosen;
+          if (chosen === 'transfer_next_month') p.soTienThuaChuyenKySau = chenhLech;
         }
       }
 
-      // Add payment record
       state.payments.unshift(p);
 
-      // Recalculate contract rollover
-      const contract = state.contracts.find(c => c.MaHopDong === p.MaHopDong);
+      const contract = state.contracts.find(x => x.MaHopDong === p.MaHopDong);
       if (contract) {
-        if (p.LoaiThanhToan === 'Tất toán') {
-          const updatedC = { ...contract, TrangThai: 'Đã tất toán', NgayTatToan: p.NgayThanhToan };
-          state.contracts = state.contracts.map(c => c.MaHopDong === p.MaHopDong ? updatedC : c);
-        } else if (p.LoaiThanhToan === 'Trả lãi' && contract.TrangThai === 'Đang vay') {
-          // Rollover: dùng Kỳ lãi đến (ngày đóng lãi đã điều chỉnh) + 30 ngày làm ngày đáo hạn mới
+        if (contract.TrangThai === 'Còn lãi' || contract.LaiDongBang) {
+          // Thu nốt lãi còn lại sau trả gốc
+          if ((contract.laiConNo || 0) <= 0) {
+            const updatedC = {
+              ...contract,
+              TrangThai: 'Đã tất toán',
+              NgayTatToan: p.NgayThanhToan,
+              laiConNo: 0
+            };
+            state.contracts = state.contracts.map(x => x.MaHopDong === p.MaHopDong ? updatedC : x);
+          } else {
+            state.contracts = state.contracts.map(x => x.MaHopDong === p.MaHopDong ? { ...contract } : x);
+          }
+        } else if (contract.TrangThai === 'Đang vay') {
           const closeDateStr = p.KyLaiDen || p.NgayThanhToan;
-          let baseDate = new Date(closeDateStr);
-          if (isNaN(baseDate.getTime())) {
-            baseDate = new Date(p.NgayThanhToan);
+          let baseDate = ymdToLocalDate(closeDateStr) || ymdToLocalDate(p.NgayThanhToan);
+          if (baseDate) {
+            baseDate = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + 30);
+            const payDate = ymdToLocalDate(p.NgayThanhToan);
+            while (payDate && baseDate < payDate) {
+              baseDate = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + 30);
+            }
+            const newNgayDaoHan = localDateToYMD(baseDate);
+            const updatedC = { ...contract, NgayDaoHan: newNgayDaoHan, NgayDaoHanManual: false, laiConNo: contract.laiConNo };
+            state.contracts = state.contracts.map(x => x.MaHopDong === p.MaHopDong ? updatedC : x);
           }
-          
-          // +30 ngày chuẩn cho kỳ tiếp
-          baseDate.setDate(baseDate.getDate() + 30);
-          
-          // Nếu vẫn còn quá hạn so với ngày nộp thực, tiếp tục +30
-          const payDate = new Date(p.NgayThanhToan);
-          payDate.setHours(0,0,0,0);
-          while (baseDate < payDate) {
-            baseDate.setDate(baseDate.getDate() + 30);
-          }
-          
-          const newNgayDaoHan = baseDate.toISOString().split('T')[0];
-          const updatedC = { ...contract, NgayDaoHan: newNgayDaoHan, NgayDaoHanManual: false };
-          state.contracts = state.contracts.map(c => c.MaHopDong === p.MaHopDong ? updatedC : c);
         }
       }
 
-      // Save complete state and refresh
       saveStateOfflineAndRefresh(true);
       showNotification("Đã lập phiếu thu thành công!");
       closeModal('payment-modal');
-
-      // Double safety refresh
-      setTimeout(() => {
-        if (window.renderApp) window.renderApp();
-      }, 80);
+      setTimeout(() => { if (window.renderApp) window.renderApp(); }, 80);
     }
 
     function handleDeletePayment(maTT) {
@@ -3355,7 +3528,14 @@ const DEFAULT_CAPITAL_SOURCES = [
           if (p && p.LoaiThanhToan === 'Tất toán') {
             const contract = state.contracts.find(c => c.MaHopDong === p.MaHopDong);
             if (contract) {
-              const updatedC = { ...contract, TrangThai: 'Đang vay', NgayTatToan: null };
+              const updatedC = {
+                ...contract,
+                TrangThai: 'Đang vay',
+                NgayTatToan: null,
+                NgayTraGoc: null,
+                LaiDongBang: false,
+                CachTinhLaiTatToan: null
+              };
               executeSave('contracts', p.MaHopDong, updatedC, () => { state.contracts = state.contracts.map(c => c.MaHopDong === p.MaHopDong ? updatedC : c); });
             }
           }
@@ -3555,32 +3735,96 @@ const DEFAULT_CAPITAL_SOURCES = [
       const i = document.getElementById('pm-SoTienTra');
       if (c && i) {
         if (!isLai) {
-          i.value = c.SoTienVay;
+          // Tất toán: điền gốc + tính lãi
+          const calc = calculateContractInterest(c);
+          const gocEl = document.getElementById('pm-SoTienGoc');
+          if (gocEl) gocEl.value = calc.duNoGocHienTai;
+          i.value = calc.duNoGocHienTai;
+          if (window.updateSettlementPreview) window.updateSettlementPreview(true);
         } else {
-          const sug = getCurrentCycleInterestSuggestion(c);
-          i.value = (sug.amount || 0) + Number(c.laiConNo || 0);
-          // init period fields if present
-          const tuEl = document.getElementById('pm-KyLaiTu');
-          const denEl = document.getElementById('pm-KyLaiDen');
-          if (tuEl && !tuEl.value) tuEl.value = formatDate(sug.kyTu);
-          if (denEl && !denEl.value) denEl.value = formatDate(sug.kyDen);
-          // show note for first or adjusted
-          const noteEl = document.getElementById('pm-first-note');
-          if (noteEl) noteEl.textContent = sug.note || '';
+          if (c.TrangThai === 'Còn lãi' || c.LaiDongBang) {
+            i.value = Number(c.laiConNo || 0);
+            const noteEl = document.getElementById('pm-first-note');
+            if (noteEl) noteEl.textContent = 'Thu lãi còn lại sau khi đã trả gốc (không phát sinh thêm).';
+          } else {
+            const sug = getCurrentCycleInterestSuggestion(c);
+            i.value = (sug.amount || 0) + Number(c.laiConNo || 0);
+            const tuEl = document.getElementById('pm-KyLaiTu');
+            const denEl = document.getElementById('pm-KyLaiDen');
+            if (tuEl && !tuEl.value) tuEl.value = formatDate(sug.kyTu);
+            if (denEl && !denEl.value) denEl.value = formatDate(sug.kyDen);
+            const noteEl = document.getElementById('pm-first-note');
+            if (noteEl) noteEl.textContent = sug.note || '';
+          }
           if (window.updatePaymentInterestPreview) window.updatePaymentInterestPreview();
         }
       }
       if (window.updatePaymentInterestPreview) window.updatePaymentInterestPreview();
+      if (window.updateSettlementPreview) window.updateSettlementPreview();
     }
-    function onPaymentTypeChange(v) { 
-      const disc = document.getElementById('pm-discount-container'); 
-      if (disc) disc.classList.toggle('hidden', v === 'Tất toán'); 
+    function onPaymentTypeChange(v) {
+      const isTatToan = v === 'Tất toán';
+      const disc = document.getElementById('pm-discount-container');
+      if (disc) disc.classList.toggle('hidden', isTatToan);
       const per = document.getElementById('pm-period-container');
-      if (per) per.classList.toggle('hidden', v !== 'Trả lãi');
+      if (per) per.classList.toggle('hidden', isTatToan);
+      const sett = document.getElementById('pm-settlement-container');
+      if (sett) sett.classList.toggle('hidden', !isTatToan);
+      const singleAmt = document.getElementById('pm-single-amount-container');
+      if (singleAmt) singleAmt.classList.toggle('hidden', isTatToan);
+      // HĐ chỉ còn lãi: mặc định chọn Trả lãi
       const maEl = document.getElementById('pm-MaHopDong');
-      (window.onPaymentContractChange || onPaymentContractChange)(maEl ? maEl.value : ''); 
+      const c = maEl && state.contracts.find(x => x.MaHopDong === maEl.value);
+      if (c && (c.TrangThai === 'Còn lãi' || c.LaiDongBang) && isTatToan) {
+        // vẫn cho tất toán 0 gốc + thu lãi
+      }
+      (window.onPaymentContractChange || onPaymentContractChange)(maEl ? maEl.value : '');
     }
     function onTrangThaiThuChange(v) { const c = document.getElementById('pm-staff-container'); if(c) c.classList.toggle('hidden', v !== 'NhanVienGiu'); }
+
+    function updateSettlementPreview(forceSetLai = false) {
+      const maHD = document.getElementById('pm-MaHopDong') ? document.getElementById('pm-MaHopDong').value : '';
+      const c = (state.contracts || []).find(x => x.MaHopDong === maHD);
+      const summaryEl = document.getElementById('pm-settlement-summary');
+      const laiEl = document.getElementById('pm-SoTienLai');
+      const gocEl = document.getElementById('pm-SoTienGoc');
+      const noteEl = document.getElementById('pm-settlement-note');
+      if (!c) return;
+
+      const ngayEl = document.querySelector('#payment-modal input[name="NgayThanhToan"]');
+      const ngayTra = (ngayEl && ngayEl.value) ? ngayEl.value : todayYMD();
+      const modeRadio = document.querySelector('#payment-modal input[name="CachTinhLai"]:checked');
+      const mode = modeRadio ? modeRadio.value : 'den_ngay_tra';
+
+      const calc = calculateContractInterest(c);
+      if (gocEl && (forceSetLai || !gocEl.value)) gocEl.value = calc.duNoGocHienTai;
+
+      const sett = calculateSettlementInterest(c, ngayTra, mode);
+      if (laiEl && (forceSetLai || laiEl.dataset.auto !== '0')) {
+        laiEl.value = sett.lai;
+        laiEl.dataset.auto = '1';
+      }
+      const goc = Number(gocEl ? gocEl.value : 0);
+      const lai = Number(laiEl ? laiEl.value : sett.lai);
+      if (summaryEl) {
+        summaryEl.innerHTML = `
+          <div class="flex justify-between"><span>Gốc cần thu:</span><b class="text-slate-900">${formatVND(goc)}</b></div>
+          <div class="flex justify-between"><span>Lãi cần đóng (${mode === 'du_thang' ? 'đủ tháng' : 'đến ngày trả'}):</span><b class="text-rose-600">${formatVND(lai)}</b></div>
+          <div class="flex justify-between border-t border-indigo-100 pt-1 mt-1"><span class="font-bold">Tổng gốc + lãi:</span><b class="text-indigo-700 text-sm">${formatVND(goc + lai)}</b></div>
+          <div class="text-[10px] text-slate-500 mt-1">${sett.note || ''}${sett.laiNoCu > 0 ? ` · Nợ lãi cũ ${formatVND(sett.laiNoCu)}` : ''}</div>
+          <div class="text-[10px] text-amber-700 mt-1 font-semibold">💡 Nếu chỉ thu gốc (lãi = 0): HĐ chuyển sang <b>Còn lãi</b> để theo dõi thu lãi sau.</div>
+        `;
+      }
+      if (noteEl) {
+        noteEl.textContent = mode === 'du_thang'
+          ? 'Khách trả đủ tháng (làm tròn tháng kể cả ngày lẻ).'
+          : 'Chỉ tính lãi đến đúng ngày khách trả thực tế (có thể nhập lùi ngày).';
+      }
+      // Đồng bộ SoTienTra ẩn/legacy = gốc (để validate cũ không vỡ)
+      const i = document.getElementById('pm-SoTienTra');
+      if (i) i.value = goc > 0 ? goc : (lai > 0 ? lai : 0);
+    }
+    window.updateSettlementPreview = updateSettlementPreview;
 
     // Live update preview lãi kỳ (hỗ trợ điều chỉnh ngày, tính lại với chênh lệch ngày)
     function updatePaymentInterestPreview(forceSetAmount = false) {
@@ -3966,15 +4210,17 @@ const DEFAULT_CAPITAL_SOURCES = [
         const searchKeyword = (state.actionSearchTerm || '').toLowerCase().trim();
 
         const todayObj = new Date(); todayObj.setHours(0,0,0,0);
-        let allActiveContracts = state.contracts.filter(c => c.TrangThai === 'Đang vay').map(c => {
+        let allActiveContracts = state.contracts.filter(c => c.TrangThai === 'Đang vay' || c.TrangThai === 'Còn lãi').map(c => {
           const calc = calculateContractInterest(c);
-          const st = getContractWarningStatus(c);
+          const st = c.TrangThai === 'Còn lãi'
+            ? { type: 'con_lai', label: 'Còn lãi', cls: 'bg-violet-100 text-violet-800', daysDiff: -9998, absDays: 0 }
+            : getContractWarningStatus(c);
           const cu = state.customers.find(x => x.MaKH === c.MaKH);
           // Sử dụng gợi ý kỳ hiện tại (có xử lý tháng đầu có ngày tính lãi sau giải ngân)
           const sug = getCurrentCycleInterestSuggestion(c);
-          const cycleLai = sug.amount || Math.round((calc.duNoGocHienTai / 1000000) * c.LaiNgayTrenTrieu * 30);
-          const backlog = Math.max(0, calc.laiConNo - cycleLai);
-          const soLaiCanDong = c.LoaiHopDong === 'LaiCoDinhNgay' ? calc.laiConNo : (cycleLai + backlog);
+          const cycleLai = c.TrangThai === 'Còn lãi' ? calc.laiConNo : (sug.amount || Math.round((calc.duNoGocHienTai / 1000000) * c.LaiNgayTrenTrieu * 30));
+          const backlog = c.TrangThai === 'Còn lãi' ? 0 : Math.max(0, calc.laiConNo - cycleLai);
+          const soLaiCanDong = c.TrangThai === 'Còn lãi' || c.LoaiHopDong === 'LaiCoDinhNgay' ? calc.laiConNo : (cycleLai + backlog);
           let daysDiff = 0;
           if (c.NgayDaoHan) {
             const dao = new Date(c.NgayDaoHan); dao.setHours(0,0,0,0);
@@ -4699,7 +4945,10 @@ const DEFAULT_CAPITAL_SOURCES = [
 
           let rowBgClass = 'hover:bg-slate-50';
           let warningTag = '';
-          if (contract.TrangThai === 'Đang vay') {
+          if (contract.TrangThai === 'Còn lãi') {
+            rowBgClass = 'bg-violet-50/70 hover:bg-violet-100/70 border-l-4 border-l-violet-500';
+            warningTag = `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-violet-600 text-white ml-1 shadow-sm">💰 Còn lãi ${formatVND(calc.laiConNo)}</span>`;
+          } else if (contract.TrangThai === 'Đang vay') {
             if (status.type === 'overdue') {
               rowBgClass = 'bg-rose-50/70 hover:bg-rose-100/70 border-l-4 border-l-rose-500';
               warningTag = `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-rose-500 text-white ml-1 shadow-sm">⚠️ Quá hạn ${status.absDays} ngày</span>`;
@@ -4928,7 +5177,7 @@ const DEFAULT_CAPITAL_SOURCES = [
                   { id: 'dashboard', icon: 'dashboard', label: 'Tổng quan' },
                   { id: 'customers', icon: 'users', label: 'Khách hàng', count: state.customers.length },
                   { id: 'capital_sources', icon: 'database', label: 'Nguồn Vốn', count: state.capitalSources.length },
-                  { id: 'contracts', icon: 'fileText', label: 'Hợp đồng', count: state.contracts.filter(c=>c.TrangThai==='Đang vay').length },
+                  { id: 'contracts', icon: 'fileText', label: 'Hợp đồng', count: state.contracts.filter(c=>c.TrangThai==='Đang vay'||c.TrangThai==='Còn lãi').length },
                   { id: 'payments', icon: 'creditCard', label: 'Nhật ký' },
                   { id: 'settings', icon: 'sync', label: 'Cài đặt' }
                 ];
@@ -5684,6 +5933,7 @@ const DEFAULT_CAPITAL_SOURCES = [
                     <select id="ex-TrangThai" class="w-full border p-2 text-xs rounded-lg bg-white font-semibold">
                       <option value="All">Tất cả trạng thái</option>
                       <option value="Đang vay">Đang vay</option>
+                      <option value="Còn lãi">Còn lãi</option>
                       <option value="Đã tất toán">Đã tất toán</option>
                     </select>
                   </div>
@@ -5975,7 +6225,7 @@ const DEFAULT_CAPITAL_SOURCES = [
                   </div>
                   <div>
                     <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Trạng Thái Hợp Đồng</label>
-                    <select name="TrangThai" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none bg-white font-semibold"><option ${data.TrangThai==='Đang vay'?'selected':''}>Đang vay</option><option ${data.TrangThai==='Đã tất toán'?'selected':''}>Đã tất toán</option></select>
+                    <select name="TrangThai" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none bg-white font-semibold"><option ${data.TrangThai==='Đang vay'?'selected':''}>Đang vay</option><option ${data.TrangThai==='Còn lãi'?'selected':''}>Còn lãi</option><option ${data.TrangThai==='Đã tất toán'?'selected':''}>Đã tất toán</option></select>
                   </div>
                 </div>
               </div>
@@ -6040,13 +6290,19 @@ const DEFAULT_CAPITAL_SOURCES = [
     window.onContractTypeChange = onContractTypeChange;
 
     function renderPaymentModalHTML() {
-      let contOpts = state.contracts.filter(c=>c.TrangThai==='Đang vay').map(c => {
-         const cu = state.customers.find(x=>x.MaKH===c.MaKH);
-         return `<option value="${c.MaHopDong}">${c.MaHopDong} - ${cu?cu.TenKhachHang:''} (${formatVND(c.SoTienVay)})</option>`;
-      }).join('');
+      let contOpts = state.contracts
+        .filter(c => c.TrangThai === 'Đang vay' || c.TrangThai === 'Còn lãi')
+        .map(c => {
+          const cu = state.customers.find(x => x.MaKH === c.MaKH);
+          const calc = calculateContractInterest(c);
+          const tag = c.TrangThai === 'Còn lãi' ? ' [Còn lãi]' : '';
+          const amt = c.TrangThai === 'Còn lãi' ? `lãi ${formatVND(calc.laiConNo)}` : formatVND(calc.duNoGocHienTai);
+          return `<option value="${c.MaHopDong}">${c.MaHopDong} - ${cu ? cu.TenKhachHang : ''}${tag} (${amt})</option>`;
+        }).join('');
+      const todayVal = todayYMD();
       return `
-        <div id="payment-modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center z-50">
-          <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl animate-scaleIn">
+        <div id="payment-modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center z-50 p-3 overflow-y-auto">
+          <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl animate-scaleIn my-auto">
             <h3 class="font-bold mb-4 text-slate-900 text-base">Lập Phiếu Thu Tiền Cho Vay</h3>
             <form onsubmit="window.handleSavePayment && window.handleSavePayment(event)">
               <div class="space-y-3 mb-5">
@@ -6055,8 +6311,8 @@ const DEFAULT_CAPITAL_SOURCES = [
                   ${contOpts}
                 </select>
                 <select name="LoaiThanhToan" onchange="window.onPaymentTypeChange && window.onPaymentTypeChange(this.value)" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none bg-white font-semibold text-indigo-700">
-                  <option value="Trả lãi">Trả lãi định kỳ</option>
-                  <option value="Tất toán">Tất toán gốc</option>
+                  <option value="Trả lãi">Trả lãi định kỳ / Thu lãi còn lại</option>
+                  <option value="Tất toán">Tất toán / Trả gốc (+ lãi)</option>
                 </select>
                 <select name="TrangThaiThu" onchange="window.onTrangThaiThuChange && window.onTrangThaiThuChange(this.value)" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none bg-white font-semibold">
                   <option value="DaNop">Chủ nhận trực tiếp (Nộp két)</option>
@@ -6083,10 +6339,38 @@ const DEFAULT_CAPITAL_SOURCES = [
                   </div>
                   <div id="pm-first-note" class="text-[9px] text-indigo-600 mt-0.5"></div>
                 </div>
+
+                <!-- TẤT TOÁN: GỐC + LÃI + CÁCH TÍNH -->
+                <div id="pm-settlement-container" class="hidden border border-rose-200 bg-rose-50/50 p-3 rounded-xl space-y-2.5">
+                  <div class="font-bold text-rose-700 text-xs">🏦 Tất toán / Trả gốc — tách Gốc &amp; Lãi</div>
+                  <div>
+                    <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Số tiền gốc trả (VNĐ)</label>
+                    <input type="number" id="pm-SoTienGoc" name="SoTienGoc" min="0" class="w-full border p-2 text-sm rounded-xl font-extrabold text-slate-900 bg-white" placeholder="Dư nợ gốc..." oninput="window.updateSettlementPreview&&window.updateSettlementPreview()" />
+                  </div>
+                  <div>
+                    <label class="block text-[10px] font-bold text-slate-600 mb-1">Cách tính số lãi phải đóng</label>
+                    <div class="space-y-1.5 text-[11px] font-semibold text-slate-700">
+                      <label class="flex items-start gap-2 cursor-pointer bg-white border border-slate-200 rounded-lg p-2">
+                        <input type="radio" name="CachTinhLai" value="den_ngay_tra" class="mt-0.5 accent-rose-600" checked onchange="const el=document.getElementById('pm-SoTienLai'); if(el) el.dataset.auto='1'; window.updateSettlementPreview&&window.updateSettlementPreview(true)" />
+                        <span><b>Tính đến ngày trả</b><br><span class="text-[10px] font-normal text-slate-500">Chỉ tính lãi đến ngày khách trả thực tế (nhập lùi ngày nếu ghi nhận trễ).</span></span>
+                      </label>
+                      <label class="flex items-start gap-2 cursor-pointer bg-white border border-slate-200 rounded-lg p-2">
+                        <input type="radio" name="CachTinhLai" value="du_thang" class="mt-0.5 accent-rose-600" onchange="const el=document.getElementById('pm-SoTienLai'); if(el) el.dataset.auto='1'; window.updateSettlementPreview&&window.updateSettlementPreview(true)" />
+                        <span><b>Tính đủ tháng</b><br><span class="text-[10px] font-normal text-slate-500">Làm tròn đủ tháng (có ngày lẻ → tính thêm 1 tháng đầy).</span></span>
+                      </label>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Số tiền lãi cần đóng (VNĐ) <span class="font-normal text-slate-400">— có thể sửa tay</span></label>
+                    <input type="number" id="pm-SoTienLai" name="SoTienLai" min="0" data-auto="1" class="w-full border p-2 text-sm rounded-xl font-extrabold text-rose-600 bg-white" placeholder="Lãi phải thu..." oninput="this.dataset.auto='0'; window.updateSettlementPreview&&window.updateSettlementPreview()" />
+                    <p id="pm-settlement-note" class="text-[10px] text-slate-500 mt-0.5"></p>
+                  </div>
+                  <div id="pm-settlement-summary" class="bg-white border border-indigo-100 rounded-lg p-2 text-[11px] space-y-0.5 text-slate-600"></div>
+                </div>
                 
-                <div>
+                <div id="pm-single-amount-container">
                   <label class="block text-xs font-bold text-slate-500 mb-1">Số tiền thu thực tế (VNĐ)</label>
-                  <input type="number" id="pm-SoTienTra" name="SoTienTra" oninput="window.updatePaymentDifference && window.updatePaymentDifference()" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none font-extrabold text-lg bg-slate-50" placeholder="Số tiền mặt nhận được..." required />
+                  <input type="number" id="pm-SoTienTra" name="SoTienTra" oninput="window.updatePaymentDifference && window.updatePaymentDifference()" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none font-extrabold text-lg bg-slate-50" placeholder="Số tiền mặt nhận được..." />
                 </div>
                 
                 <div id="pm-discount-container">
@@ -6098,8 +6382,8 @@ const DEFAULT_CAPITAL_SOURCES = [
                 </div>
                 
                 <div>
-                  <label class="block text-xs font-bold text-slate-500 mb-1">Ngày thu tiền thực tế</label>
-                  <input type="date" name="NgayThanhToan" value="${new Date().toISOString().split('T')[0]}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none" required />
+                  <label class="block text-xs font-bold text-slate-500 mb-1">Ngày thu tiền thực tế <span class="font-normal text-slate-400">(có thể nhập lùi theo ngày khách trả)</span></label>
+                  <input type="date" name="NgayThanhToan" value="${todayVal}" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none" required onchange="window.updateSettlementPreview&&window.updateSettlementPreview(true); window.updatePaymentInterestPreview&&window.updatePaymentInterestPreview()" />
                 </div>
 
                 <div id="pm-overpaid-container" class="hidden border border-emerald-250 bg-emerald-50/60 p-3 rounded-xl text-xs space-y-2">
