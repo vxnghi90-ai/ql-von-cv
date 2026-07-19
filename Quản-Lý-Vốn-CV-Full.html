@@ -2490,18 +2490,37 @@ const DEFAULT_CAPITAL_SOURCES = [
       return changed;
     }
 
-    // === ĐẾN HẠN = Ngày vay sau đáo + 1 tháng (không lấy ngày thanh toán gần nhất) ===
+    /** Ngày vay + 30 ngày lịch (công thức CŨ sai — dùng để phát hiện & sửa HĐ cũ) */
+    function legacyPlus30DaysYMD(ymdStr) {
+      const d = ymdToLocalDate(toInputDate(ymdStr) || ymdStr);
+      if (!d) return '';
+      const x = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 30);
+      return localDateToYMD(x);
+    }
+
+    // === ĐẾN HẠN = Ngày vay sau đáo + 1 tháng lịch (12/7 → 12/8, KHÔNG phải 11/8) ===
     function recalculateAllDueDates() {
       let changed = false;
       state.contracts.forEach(c => {
         if (c.TrangThai !== 'Đang vay') return;
-        if (c.NgayDaoHanManual) return; // Bỏ qua nếu người dùng đã tự sửa ngày đáo hạn thủ công
 
-        const calculatedNgayDaoHan = calculateNgayDenHan(c);
-        if (!calculatedNgayDaoHan) return;
-        const currentIso = toInputDate(c.NgayDaoHan) || c.NgayDaoHan;
-        if (currentIso !== calculatedNgayDaoHan) {
-          c.NgayDaoHan = calculatedNgayDaoHan;
+        const correct = calculateNgayDenHan(c);
+        if (!correct) return;
+        const currentIso = toInputDate(c.NgayDaoHan) || (c.NgayDaoHan ? String(c.NgayDaoHan).slice(0, 10) : '');
+        const vayIso = toInputDate(c.NgayBatDauTinhLai || c.NgayVay) || c.NgayVay;
+        const oldPlus30 = legacyPlus30DaysYMD(vayIso);
+
+        // Hủy cờ "manual" giả do bug cũ (lưu +30 ngày hoặc đã trùng công thức đúng)
+        if (c.NgayDaoHanManual) {
+          if (!currentIso || currentIso === oldPlus30 || currentIso === correct) {
+            c.NgayDaoHanManual = false;
+            changed = true;
+          }
+        }
+
+        // Ép cập nhật nếu không phải manual thật
+        if (!c.NgayDaoHanManual && currentIso !== correct) {
+          c.NgayDaoHan = correct;
           changed = true;
         }
       });
@@ -2540,7 +2559,8 @@ const DEFAULT_CAPITAL_SOURCES = [
           stats.tongVonChoVay += calc.duNoGocHienTai;
           
           // CHỈ TÍNH CÁC HỢP ĐỒNG ĐÃ ĐẾN HẠN HOẶC QUÁ HẠN ĐÓNG LÃI MÀ CHƯA NỘP
-          const isDue = !contract.NgayDaoHan || todayStr >= contract.NgayDaoHan;
+          const denHanIso = calculateNgayDenHan(contract) || toInputDate(contract.NgayDaoHan) || contract.NgayDaoHan;
+          const isDue = !denHanIso || todayStr >= denHanIso;
           if (isDue) {
             stats.tongLaiConNo += calc.laiConNo;
           }
@@ -4102,15 +4122,14 @@ const DEFAULT_CAPITAL_SOURCES = [
       const savedScroll = keepScroll ? captureScrollPos() : null;
       _lastRenderActiveTab = state.activeTab;
       try {
-      // Đồng bộ Đến hạn = Ngày vay sau đáo + 1 tháng (sửa HĐ đã từng thanh toán)
-      if (typeof recalculateAllDueDates === 'function') {
+      // Đồng bộ Đến hạn = sau đáo + 1 tháng lịch; sửa HĐ cũ (+30 ngày / manual giả)
+      if (typeof recalculateAllDueDates === 'function' && state.isUnlocked) {
         const dueChanged = recalculateAllDueDates();
-        if (dueChanged && state.isUnlocked && state.password) {
-          // Lưu thầm không re-render (tránh vòng lặp)
+        if (dueChanged && state.password) {
           try {
             if (typeof saveStateOfflineAndRefresh === 'function') {
               const prev = state.notification;
-              saveStateOfflineAndRefresh(false, { skipDirtyMark: false });
+              saveStateOfflineAndRefresh(false, { skipDirtyMark: true });
               state.notification = prev;
             }
           } catch (_) {}
@@ -5127,7 +5146,7 @@ const DEFAULT_CAPITAL_SOURCES = [
               <td class="p-2 text-slate-600 text-xs">${formatDate(contract.NgayVay)}</td>
               <td class="p-2 text-slate-600 text-xs">${formatDate(calc.ngayDongLaiGanNhat)}</td>
               <td class="p-2 text-indigo-700 text-xs font-extrabold bg-indigo-50/40">${formatDate(calc.ngayVaySauDaoStr)}</td>
-              <td class="p-2 text-xs font-bold">${formatDate((contract.TrangThai === 'Đang vay') ? ((contract.NgayDaoHanManual ? toInputDate(contract.NgayDaoHan) : null) || calculateNgayDenHan(contract) || contract.NgayDaoHan) : contract.NgayDaoHan)}${warningTag}</td>
+              <td class="p-2 text-xs font-bold">${formatDate((contract.TrangThai === 'Đang vay') ? (calculateNgayDenHan(contract) || contract.NgayDaoHan) : contract.NgayDaoHan)}${warningTag}</td>
               <td class="p-2 text-right font-extrabold text-slate-900 text-xs">${formatVND(calc.duNoGocHienTai)}</td>
               <td class="p-2 text-right text-xs font-semibold text-slate-750">${contract.LoaiHopDong === 'LaiCoDinhNgay' ? `<span class="text-slate-400 font-normal">Cố định: ${formatVND(contract.SoLaiCoDinh || 0)}</span>` : `${formatVND(contract.LaiNgayTrenTrieu || 0)} đ`}</td>
               <td class="p-2">${timeline}</td>
