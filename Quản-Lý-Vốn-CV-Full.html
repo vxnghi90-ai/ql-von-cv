@@ -3745,34 +3745,34 @@ const DEFAULT_CAPITAL_SOURCES = [
       const typeSel = document.querySelector('#payment-modal select[name="LoaiThanhToan"]') || document.querySelector('select[name="LoaiThanhToan"]');
       const isLai = !typeSel || typeSel.value === 'Trả lãi';
       const i = document.getElementById('pm-SoTienTra');
-      if (c && i) {
-        if (!isLai) {
-          // Tất toán: điền gốc + tính lãi
-          const calc = calculateContractInterest(c);
-          const gocEl = document.getElementById('pm-SoTienGoc');
-          if (gocEl) gocEl.value = calc.duNoGocHienTai;
-          i.value = calc.duNoGocHienTai;
-          if (window.updateSettlementPreview) window.updateSettlementPreview(true);
+      if (!c) return;
+
+      if (!isLai) {
+        // Tất toán: điền gốc + tính lãi
+        const calc = calculateContractInterest(c);
+        const gocEl = document.getElementById('pm-SoTienGoc');
+        if (gocEl) gocEl.value = calc.duNoGocHienTai;
+        if (window.updateSettlementPreview) window.updateSettlementPreview(true);
+      } else {
+        // Trả lãi: số tiền thu = đúng lãi kỳ (30d / kỳ điều chỉnh) + nợ lãi cũ nếu có
+        const tuEl = document.getElementById('pm-KyLaiTu');
+        const denEl = document.getElementById('pm-KyLaiDen');
+        if (c.TrangThai === 'Còn lãi' || c.LaiDongBang) {
+          if (i) i.value = Number(c.laiConNo || 0);
+          const noteEl = document.getElementById('pm-first-note');
+          if (noteEl) noteEl.textContent = 'Thu lãi còn lại sau khi đã trả gốc (không phát sinh thêm).';
+          if (window.updatePaymentDifference) window.updatePaymentDifference();
         } else {
-          if (c.TrangThai === 'Còn lãi' || c.LaiDongBang) {
-            i.value = Number(c.laiConNo || 0);
-            const noteEl = document.getElementById('pm-first-note');
-            if (noteEl) noteEl.textContent = 'Thu lãi còn lại sau khi đã trả gốc (không phát sinh thêm).';
-          } else {
-            const sug = getCurrentCycleInterestSuggestion(c);
-            i.value = (sug.amount || 0) + Number(c.laiConNo || 0);
-            const tuEl = document.getElementById('pm-KyLaiTu');
-            const denEl = document.getElementById('pm-KyLaiDen');
-            if (tuEl && !tuEl.value) tuEl.value = formatDate(sug.kyTu);
-            if (denEl && !denEl.value) denEl.value = formatDate(sug.kyDen);
-            const noteEl = document.getElementById('pm-first-note');
-            if (noteEl) noteEl.textContent = sug.note || '';
-          }
-          if (window.updatePaymentInterestPreview) window.updatePaymentInterestPreview();
+          const sug = getCurrentCycleInterestSuggestion(c);
+          if (tuEl) tuEl.value = formatDate(sug.kyTu);
+          if (denEl) denEl.value = formatDate(sug.kyDen);
+          const noteEl = document.getElementById('pm-first-note');
+          if (noteEl) noteEl.textContent = sug.note || '';
+          // forceSetAmount=true → luôn điền đúng lãi kỳ vào ô thu
+          if (window.updatePaymentInterestPreview) window.updatePaymentInterestPreview(true);
+          else if (i) i.value = (sug.amount || 0) + Number(c.laiConNo || 0);
         }
       }
-      if (window.updatePaymentInterestPreview) window.updatePaymentInterestPreview();
-      if (window.updateSettlementPreview) window.updateSettlementPreview();
     }
     function onPaymentTypeChange(v) {
       const isTatToan = v === 'Tất toán';
@@ -3784,12 +3784,10 @@ const DEFAULT_CAPITAL_SOURCES = [
       if (sett) sett.classList.toggle('hidden', !isTatToan);
       const singleAmt = document.getElementById('pm-single-amount-container');
       if (singleAmt) singleAmt.classList.toggle('hidden', isTatToan);
-      // HĐ chỉ còn lãi: mặc định chọn Trả lãi
+      // Đổi loại phiếu → reset cờ userEdited để điền lại số đúng (lãi kỳ / gốc)
+      const si = document.getElementById('pm-SoTienTra');
+      if (si) si.dataset.userEdited = '0';
       const maEl = document.getElementById('pm-MaHopDong');
-      const c = maEl && state.contracts.find(x => x.MaHopDong === maEl.value);
-      if (c && (c.TrangThai === 'Còn lãi' || c.LaiDongBang) && isTatToan) {
-        // vẫn cho tất toán 0 gốc + thu lãi
-      }
       (window.onPaymentContractChange || onPaymentContractChange)(maEl ? maEl.value : '');
     }
     function onTrangThaiThuChange(v) { const c = document.getElementById('pm-staff-container'); if(c) c.classList.toggle('hidden', v !== 'NhanVienGiu'); }
@@ -3832,9 +3830,12 @@ const DEFAULT_CAPITAL_SOURCES = [
           ? 'Khách trả đủ tháng (làm tròn tháng kể cả ngày lẻ).'
           : 'Chỉ tính lãi đến đúng ngày khách trả thực tế (có thể nhập lùi ngày).';
       }
-      // Đồng bộ SoTienTra ẩn/legacy = gốc (để validate cũ không vỡ)
-      const i = document.getElementById('pm-SoTienTra');
-      if (i) i.value = goc > 0 ? goc : (lai > 0 ? lai : 0);
+      // Chỉ đồng bộ SoTienTra khi đang ở chế độ Tất toán (không đè số lãi khi Trả lãi)
+      const typeSel = document.querySelector('#payment-modal select[name="LoaiThanhToan"]');
+      if (typeSel && typeSel.value === 'Tất toán') {
+        const i = document.getElementById('pm-SoTienTra');
+        if (i) i.value = goc > 0 ? goc : 0;
+      }
     }
     window.updateSettlementPreview = updateSettlementPreview;
 
@@ -3892,9 +3893,13 @@ const DEFAULT_CAPITAL_SOURCES = [
           noteEl.textContent = isFirst ? 'Kỳ đầu' : 'Kỳ thường';
         }
       }
-      if (forceSetAmount || (document.getElementById('pm-SoTienTra') && !document.getElementById('pm-SoTienTra').value)) {
-        const si = document.getElementById('pm-SoTienTra');
-        if (si) si.value = totalDue;
+      // Trả lãi: luôn điền đúng số lãi kỳ (trừ khi user đã sửa tay và không force)
+      const si = document.getElementById('pm-SoTienTra');
+      if (si) {
+        if (forceSetAmount || !si.value || si.dataset.userEdited !== '1') {
+          si.value = totalDue;
+          si.dataset.userEdited = '0';
+        }
       }
       if (window.updatePaymentDifference) window.updatePaymentDifference();
     }
@@ -6429,7 +6434,7 @@ const DEFAULT_CAPITAL_SOURCES = [
                 
                 <div id="pm-single-amount-container">
                   <label class="block text-xs font-bold text-slate-500 mb-1">Số tiền thu thực tế (VNĐ)</label>
-                  <input type="number" id="pm-SoTienTra" name="SoTienTra" oninput="window.updatePaymentDifference && window.updatePaymentDifference()" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none font-extrabold text-lg bg-slate-50" placeholder="Số tiền mặt nhận được..." />
+                  <input type="number" id="pm-SoTienTra" name="SoTienTra" oninput="this.dataset.userEdited='1'; window.updatePaymentDifference && window.updatePaymentDifference()" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none font-extrabold text-lg bg-slate-50" placeholder="Số tiền lãi thu được..." />
                 </div>
                 
                 <div id="pm-discount-container">
