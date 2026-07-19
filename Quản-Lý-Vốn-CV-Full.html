@@ -1756,6 +1756,8 @@ const DEFAULT_CAPITAL_SOURCES = [
       contractCustomerFilter: '',
       actionSearchTerm: '',
       dashboardDueCalendarMonth: '',
+      signalExportOpen: false,
+      signalExportOpts: null,
       notification: null,
       customConfirm: { show: false, title: '', message: '', action: null },
       customAlert: { show: false, title: '', message: '' },
@@ -2677,6 +2679,308 @@ const DEFAULT_CAPITAL_SOURCES = [
       }
       // For normal upcoming, no big badge in MÃ HĐ (to avoid clutter), but daysDiff is available for the ĐẾN HẠN column
       return { type: 'normal', label: '', cls: '', daysDiff: diff, absDays: absDays };
+    }
+
+    /** Tuỳ chọn mặc định xuất tin cần thu (Signal / copy) */
+    function getDefaultSignalExportOpts() {
+      return {
+        includeOverdue: true,
+        includeDueToday: true,
+        includeDueSoon: true,
+        dueSoonDays: 3,
+        includeConLai: true,
+        includeAllActive: false,
+        includePhone: false
+      };
+    }
+
+    function getSignalExportOpts() {
+      if (!state.signalExportOpts) state.signalExportOpts = getDefaultSignalExportOpts();
+      return state.signalExportOpts;
+    }
+
+    /**
+     * Soạn tin tổng hợp HĐ cần thu / sắp đến hạn — dán vào Signal nhóm nội bộ.
+     * opts: includeOverdue, includeDueToday, includeDueSoon, dueSoonDays, includeConLai, includeAllActive, includePhone
+     */
+    function buildDueCollectionMessage(opts = {}) {
+      const o = Object.assign(getDefaultSignalExportOpts(), getSignalExportOpts(), opts || {});
+      const soonDays = Math.max(1, Math.min(14, Number(o.dueSoonDays) || 3));
+      const overdue = [];
+      const dueToday = [];
+      const dueSoon = [];
+      const conLai = [];
+      const otherActive = [];
+
+      (state.contracts || []).forEach(c => {
+        const cust = (state.customers || []).find(x => x.MaKH === c.MaKH);
+        const ten = cust ? (cust.TenKhachHang || '') : (c.MaKH || '');
+        const sdt = cust ? String(cust.SoDienThoai || '').trim() : '';
+        const calc = calculateContractInterest(c);
+        const sug = getCurrentCycleInterestSuggestion(c);
+
+        if (c.TrangThai === 'Còn lãi' || c.LaiDongBang) {
+          if (!o.includeConLai) return;
+          const lai = Math.max(0, Number(calc.laiConNo || c.LaiDongBang || 0));
+          conLai.push({
+            ma: c.MaHopDong,
+            ten,
+            sdt,
+            goc: 0,
+            lai,
+            note: 'đã trả gốc — còn lãi',
+            sort: -10000 - lai
+          });
+          return;
+        }
+
+        if (c.TrangThai !== 'Đang vay') return;
+        const st = getContractWarningStatus(c);
+        const daysDiff = st.daysDiff != null ? st.daysDiff : 9999;
+        const lai = c.LoaiHopDong === 'LaiCoDinhNgay'
+          ? Math.max(0, Number(calc.laiConNo || 0))
+          : Math.max(0, Number(sug.amount || calc.laiConNo || Math.round((Number(c.SoTienVay || 0) / 1000000) * (c.LaiNgayTrenTrieu || 0) * 30)));
+        const goc = Number(calc.duNoGocHienTai != null ? calc.duNoGocHienTai : c.SoTienVay) || 0;
+        const row = { ma: c.MaHopDong, ten, sdt, goc, lai, daysDiff, absDays: st.absDays || Math.abs(daysDiff), sort: daysDiff };
+
+        if (st.type === 'overdue' || daysDiff < 0) {
+          if (o.includeOverdue) {
+            row.note = `quá hạn ${row.absDays} ngày`;
+            overdue.push(row);
+          }
+        } else if (st.type === 'due_today' || daysDiff === 0) {
+          if (o.includeDueToday) {
+            row.note = 'đến hạn hôm nay';
+            dueToday.push(row);
+          }
+        } else if (daysDiff > 0 && daysDiff <= soonDays) {
+          if (o.includeDueSoon) {
+            row.note = `còn ${daysDiff} ngày`;
+            dueSoon.push(row);
+          }
+        } else if (o.includeAllActive) {
+          row.note = daysDiff != null && daysDiff < 9999 ? `còn ${daysDiff} ngày` : 'đang vay';
+          otherActive.push(row);
+        }
+      });
+
+      const byUrgency = (a, b) => a.sort - b.sort;
+      overdue.sort(byUrgency);
+      dueToday.sort(byUrgency);
+      dueSoon.sort(byUrgency);
+      conLai.sort((a, b) => b.lai - a.lai);
+      otherActive.sort(byUrgency);
+
+      const all = [...overdue, ...dueToday, ...dueSoon, ...conLai, ...otherActive];
+      const totalLai = all.reduce((s, x) => s + (Number(x.lai) || 0), 0);
+      const todayStr = formatDate(todayYMD()) || new Date().toLocaleDateString('vi-VN');
+
+      const lineOf = (x, i) => {
+        const phone = (o.includePhone && x.sdt) ? ` · ${x.sdt}` : '';
+        const gocPart = x.goc > 0 ? ` — gốc ${formatVND(x.goc)}` : ' — gốc 0đ';
+        return `${i}. ${x.ma} — ${x.ten}${phone}${gocPart} — lãi ~${formatVND(x.lai)} — ${x.note}`;
+      };
+
+      const section = (title, list) => {
+        if (!list.length) return '';
+        return `\n【${title}】 (${list.length})\n` + list.map((x, i) => lineOf(x, i + 1)).join('\n') + '\n';
+      };
+
+      if (!all.length) {
+        return {
+          text: `📋 CẦN THU LÃI — ${todayStr}\nKhông có hợp đồng nào trong phạm vi đã chọn.`,
+          counts: { overdue: 0, dueToday: 0, dueSoon: 0, conLai: 0, other: 0, total: 0, totalLai: 0 },
+          empty: true
+        };
+      }
+
+      let text = `📋 CẦN THU LÃI — ${todayStr}\n`;
+      text += `Quá hạn: ${overdue.length} | Hôm nay: ${dueToday.length} | ≤${soonDays} ngày: ${dueSoon.length} | Còn lãi: ${conLai.length}`;
+      if (o.includeAllActive) text += ` | Khác: ${otherActive.length}`;
+      text += `\nTổng lãi ước tính: ${formatVND(totalLai)}\n`;
+      text += section('QUÁ HẠN', overdue);
+      text += section('ĐẾN HẠN HÔM NAY', dueToday);
+      text += section(`SẮP ĐẾN HẠN (≤${soonDays} ngày)`, dueSoon);
+      text += section('CÒN LÃI (đã trả gốc)', conLai);
+      if (o.includeAllActive) text += section('ĐANG VAY KHÁC', otherActive);
+      text += `\n— Gửi nội bộ · app QL vốn CV —`;
+
+      return {
+        text: text.trim(),
+        counts: {
+          overdue: overdue.length,
+          dueToday: dueToday.length,
+          dueSoon: dueSoon.length,
+          conLai: conLai.length,
+          other: otherActive.length,
+          total: all.length,
+          totalLai
+        },
+        empty: false
+      };
+    }
+
+    function openSignalExportModal() {
+      if (!state.signalExportOpts) state.signalExportOpts = getDefaultSignalExportOpts();
+      state.signalExportOpen = true;
+      if (window.renderApp) window.renderApp({ keepScroll: true });
+      setTimeout(() => {
+        const m = document.getElementById('signal-export-modal');
+        if (m) m.classList.remove('hidden');
+      }, 30);
+    }
+
+    function closeSignalExportModal() {
+      state.signalExportOpen = false;
+      if (window.renderApp) window.renderApp({ keepScroll: true });
+    }
+
+    function updateSignalExportOpt(key, value) {
+      const o = getSignalExportOpts();
+      if (key === 'dueSoonDays') o.dueSoonDays = Math.max(1, Math.min(14, Number(value) || 3));
+      else o[key] = !!value;
+      // Cập nhật preview không full re-render nếu có thể
+      const ta = document.getElementById('signal-export-preview');
+      const meta = document.getElementById('signal-export-meta');
+      if (ta) {
+        const built = buildDueCollectionMessage(o);
+        ta.value = built.text;
+        if (meta) {
+          meta.textContent = built.empty
+            ? 'Không có HĐ trong phạm vi'
+            : `${built.counts.total} HĐ · lãi ~${formatVND(built.counts.totalLai)}`;
+        }
+      } else if (window.renderApp) {
+        window.renderApp({ keepScroll: true });
+      }
+    }
+
+    async function copySignalExportMessage() {
+      const built = buildDueCollectionMessage();
+      const text = built.text || '';
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const ta = document.getElementById('signal-export-preview') || document.createElement('textarea');
+          if (!ta.id) {
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+          } else {
+            ta.focus();
+            ta.select();
+            document.execCommand('copy');
+          }
+        }
+        showNotification(built.empty ? 'Đã copy (không có HĐ trong phạm vi)' : 'Đã copy tin — dán vào Signal');
+      } catch (e) {
+        showAlert('Copy thất bại', 'Hãy bôi đen ô xem trước và copy thủ công (Ctrl+C).');
+      }
+    }
+
+    async function shareSignalExportMessage() {
+      const built = buildDueCollectionMessage();
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: 'Cần thu lãi', text: built.text });
+          return;
+        } catch (e) {
+          if (e && e.name === 'AbortError') return;
+        }
+      }
+      // Fallback: copy
+      await copySignalExportMessage();
+      showNotification('Thiết bị không hỗ trợ Share — đã copy tin');
+    }
+
+    function downloadSignalExportMessage() {
+      const built = buildDueCollectionMessage();
+      const blob = new Blob([built.text], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `can-thu-lai-${todayYMD() || 'export'}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showNotification('Đã tải file .txt');
+    }
+
+    function renderSignalExportModalHTML() {
+      if (!state.signalExportOpen) {
+        return `<div id="signal-export-modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center z-50 p-3"></div>`;
+      }
+      const o = getSignalExportOpts();
+      const built = buildDueCollectionMessage(o);
+      const shareOk = typeof navigator !== 'undefined' && !!navigator.share;
+      return `
+        <div id="signal-export-modal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3">
+          <div class="bg-white rounded-2xl w-full max-w-lg shadow-xl max-h-[92vh] overflow-y-auto animate-scaleIn">
+            <div class="sticky top-0 bg-white border-b border-slate-100 px-4 py-3 flex items-center justify-between rounded-t-2xl z-10">
+              <div>
+                <h3 class="font-bold text-slate-900 text-base">📋 Xuất tin cần thu (Signal)</h3>
+                <p class="text-[11px] text-slate-500 mt-0.5">Soạn tin tổng hợp → copy/dán vào nhóm Signal nội bộ</p>
+              </div>
+              <button type="button" onclick="window.closeSignalExportModal && window.closeSignalExportModal()" class="p-1.5 text-slate-400 hover:text-slate-800 rounded-lg hover:bg-slate-100">✕</button>
+            </div>
+            <div class="p-4 space-y-3">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <label class="flex items-center gap-2 p-2 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer">
+                  <input type="checkbox" ${o.includeOverdue ? 'checked' : ''} onchange="window.updateSignalExportOpt && window.updateSignalExportOpt('includeOverdue', this.checked)" class="accent-rose-600" />
+                  <span class="font-semibold text-slate-800">Quá hạn</span>
+                </label>
+                <label class="flex items-center gap-2 p-2 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer">
+                  <input type="checkbox" ${o.includeDueToday ? 'checked' : ''} onchange="window.updateSignalExportOpt && window.updateSignalExportOpt('includeDueToday', this.checked)" class="accent-amber-600" />
+                  <span class="font-semibold text-slate-800">Đến hạn hôm nay</span>
+                </label>
+                <label class="flex items-center gap-2 p-2 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer">
+                  <input type="checkbox" ${o.includeDueSoon ? 'checked' : ''} onchange="window.updateSignalExportOpt && window.updateSignalExportOpt('includeDueSoon', this.checked)" class="accent-amber-500" />
+                  <span class="font-semibold text-slate-800">Sắp đến hạn ≤</span>
+                  <input type="number" min="1" max="14" value="${o.dueSoonDays || 3}" onchange="window.updateSignalExportOpt && window.updateSignalExportOpt('dueSoonDays', this.value)" class="w-12 border rounded-lg px-1 py-0.5 text-center font-bold" />
+                  <span class="text-slate-500">ngày</span>
+                </label>
+                <label class="flex items-center gap-2 p-2 rounded-xl border border-violet-200 bg-violet-50 cursor-pointer">
+                  <input type="checkbox" ${o.includeConLai ? 'checked' : ''} onchange="window.updateSignalExportOpt && window.updateSignalExportOpt('includeConLai', this.checked)" class="accent-violet-600" />
+                  <span class="font-semibold text-violet-900">Còn lãi (đã trả gốc)</span>
+                </label>
+                <label class="flex items-center gap-2 p-2 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer">
+                  <input type="checkbox" ${o.includeAllActive ? 'checked' : ''} onchange="window.updateSignalExportOpt && window.updateSignalExportOpt('includeAllActive', this.checked)" class="accent-slate-600" />
+                  <span class="font-semibold text-slate-800">Thêm HĐ đang vay khác</span>
+                </label>
+                <label class="flex items-center gap-2 p-2 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer">
+                  <input type="checkbox" ${o.includePhone ? 'checked' : ''} onchange="window.updateSignalExportOpt && window.updateSignalExportOpt('includePhone', this.checked)" class="accent-indigo-600" />
+                  <span class="font-semibold text-slate-800">Kèm SĐT khách</span>
+                </label>
+              </div>
+
+              <div class="flex items-center justify-between text-[11px]">
+                <span id="signal-export-meta" class="font-bold ${built.empty ? 'text-slate-400' : 'text-emerald-700'}">
+                  ${built.empty ? 'Không có HĐ trong phạm vi' : `${built.counts.total} HĐ · lãi ~${formatVND(built.counts.totalLai)}`}
+                </span>
+                <span class="text-slate-400">Tin nội bộ · không gửi từng khách</span>
+              </div>
+
+              <textarea id="signal-export-preview" readonly rows="14" class="w-full border border-slate-200 rounded-xl p-3 text-[11px] font-mono leading-relaxed bg-slate-50 text-slate-800 focus:outline-none focus:border-indigo-400 resize-y min-h-[180px]">${(built.text || '').replace(/</g, '&lt;')}</textarea>
+
+              <div class="flex flex-wrap gap-2 pt-1">
+                <button type="button" onclick="window.copySignalExportMessage && window.copySignalExportMessage()" class="flex-1 min-w-[120px] bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm px-4 py-2.5 rounded-xl shadow-sm">📋 Copy tin</button>
+                <button type="button" onclick="window.shareSignalExportMessage && window.shareSignalExportMessage()" class="flex-1 min-w-[100px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-2.5 rounded-xl shadow-sm ${shareOk ? '' : 'opacity-90'}">📤 Share${shareOk ? '' : ' / Copy'}</button>
+                <button type="button" onclick="window.downloadSignalExportMessage && window.downloadSignalExportMessage()" class="bg-slate-800 hover:bg-slate-900 text-white font-semibold text-sm px-4 py-2.5 rounded-xl">⬇ .txt</button>
+                <button type="button" onclick="window.closeSignalExportModal && window.closeSignalExportModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm px-4 py-2.5 rounded-xl">Đóng</button>
+              </div>
+              <p class="text-[10px] text-slate-400 leading-relaxed">
+                Sau khi <b>Copy</b>, mở Signal → chọn nhóm/cá nhân thu nợ → <b>dán</b> tin.
+                Giai đoạn sau có thể gửi tự động qua signal-cli (cần Docker).
+              </p>
+            </div>
+          </div>
+        </div>`;
     }
 
     // === TỰ ĐỘNG MÃ HỢP ĐỒNG HDVT0001, HDVT0002... ===
@@ -5088,7 +5392,7 @@ const DEFAULT_CAPITAL_SOURCES = [
           <!-- THANH HÀNH ĐỘNG NHANH -->
           <div class="mb-6 bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
             <h4 class="font-bold text-slate-700 text-xs uppercase mb-3 flex items-center gap-1">Hành động nhanh</h4>
-            <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               <button onclick="window.openContractModal && window.openContractModal()" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-sm">
                 ➕ Tạo hợp đồng mới
               </button>
@@ -5098,10 +5402,13 @@ const DEFAULT_CAPITAL_SOURCES = [
               <button onclick="window.openPaymentModal && window.openPaymentModal()" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-sm">
                 💰 Đóng lãi / Tất toán
               </button>
+              <button onclick="window.openSignalExportModal && window.openSignalExportModal()" class="text-xs bg-sky-600 hover:bg-sky-700 text-white py-2.5 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-sm">
+                📋 Tin cần thu (Signal)
+              </button>
               <button onclick="window.openExportExcelModal && window.openExportExcelModal('dashboard')" class="text-xs bg-slate-700 hover:bg-slate-800 text-white py-2.5 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-sm">
                 📊 Export Excel
               </button>
-              <button onclick="if(window.state){ window.state.activeTab='payments'; if(window.renderApp) window.renderApp(); }" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 border border-slate-200 shadow-sm col-span-2 sm:col-span-1">
+              <button onclick="if(window.state){ window.state.activeTab='payments'; if(window.renderApp) window.renderApp(); }" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl font-bold flex items-center justify-center gap-1.5 transition active:scale-95 border border-slate-200 shadow-sm">
                 📜 Lịch sử giao dịch
               </button>
             </div>
@@ -5756,6 +6063,7 @@ const DEFAULT_CAPITAL_SOURCES = [
                     ${state.activeTab === 'customers' ? `<button onclick="window.openCustomerModal && window.openCustomerModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition">${getIconSVG('plus', 'w-4 h-4')} Thêm Khách Hàng</button>` : ''}
                     ${state.activeTab === 'capital_sources' ? `<button onclick="window.openCapitalSourceModal && window.openCapitalSourceModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition">${getIconSVG('plus', 'w-4 h-4')} Thêm Nguồn Vốn</button>` : ''}
                     ${state.activeTab === 'contracts' ? `<button onclick="window.openContractModal && window.openContractModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition">${getIconSVG('plus', 'w-4 h-4')} Tạo Hợp Đồng</button>` : ''}
+                    ${state.activeTab === 'contracts' ? `<button onclick="window.openSignalExportModal && window.openSignalExportModal()" class="bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs sm:text-sm px-3 py-2 rounded-xl flex items-center gap-1 shadow-sm transition">📋 Tin cần thu</button>` : ''}
                     <button onclick="window.openQuickPosModal && window.openQuickPosModal()" class="bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs sm:text-sm px-3 py-2 rounded-xl flex items-center gap-1 shadow-sm transition">⚡ POS Thu Nhanh</button>
                     <button onclick="window.openExportExcelModal && window.openExportExcelModal('${state.activeTab}')" class="bg-slate-700 hover:bg-slate-800 text-white font-semibold text-xs sm:text-sm px-3 py-2 rounded-xl flex items-center gap-1 shadow-sm transition">📊 Export Excel</button>
                   </div>
@@ -5805,7 +6113,7 @@ const DEFAULT_CAPITAL_SOURCES = [
       if (state.customConfirm.show) finalHTML += `<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div class="bg-white p-6 rounded-2xl max-w-sm w-full"><h3 class="font-bold text-lg text-slate-900">${state.customConfirm.title}</h3><p class="mt-2 text-slate-600 text-sm">${state.customConfirm.message}</p><div class="mt-6 flex justify-end gap-2"><button onclick="if(window.state){window.state.customConfirm.show=false;} if(window.renderApp) window.renderApp()" class="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-sm font-semibold">Hủy</button><button onclick="if(window.state && window.state.customConfirm && window.state.customConfirm.action) window.state.customConfirm.action(); if(window.state){window.state.customConfirm.show=false;} if(window.renderApp) window.renderApp()" class="px-4 py-2 bg-rose-600 text-white rounded-xl text-sm font-semibold shadow-md">Xác nhận</button></div></div></div>`;
       if (state.customAlert.show) finalHTML += `<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div class="bg-white p-6 rounded-2xl max-w-sm w-full"><h3 class="font-bold text-lg text-slate-900">${state.customAlert.title}</h3><div class="mt-2 text-slate-600 text-sm leading-relaxed">${state.customAlert.message}</div><button onclick="if(window.state){window.state.customAlert.show=false;} if(window.renderApp) window.renderApp()" class="mt-6 w-full px-4 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-semibold shadow-md">Đã hiểu</button></div></div>`;
       
-      finalHTML += renderCustomerModalHTML() + renderCapitalSourceModalHTML() + renderContractModalHTML() + renderPaymentModalHTML() + renderCapitalAdjustmentModalHTML() + renderOwnerWithdrawModalHTML() + renderOwnerHistoryModalHTML() + renderSourcePaidModalHTML() + renderSourcePaidHistoryModalHTML() + renderPartnerWithdrawModalHTML() + renderPartnerHistoryModalHTML() + renderBusinessTransferModalHTML() + renderBusinessTransferHistoryModalHTML() + renderExportExcelModalHTML() + renderChangePINModalHTML();
+      finalHTML += renderCustomerModalHTML() + renderCapitalSourceModalHTML() + renderContractModalHTML() + renderPaymentModalHTML() + renderCapitalAdjustmentModalHTML() + renderOwnerWithdrawModalHTML() + renderOwnerHistoryModalHTML() + renderSourcePaidModalHTML() + renderSourcePaidHistoryModalHTML() + renderPartnerWithdrawModalHTML() + renderPartnerHistoryModalHTML() + renderBusinessTransferModalHTML() + renderBusinessTransferHistoryModalHTML() + renderExportExcelModalHTML() + renderChangePINModalHTML() + renderSignalExportModalHTML();
 
       container.innerHTML = finalHTML;
       if (state.activeTab === 'dashboard') {
@@ -7744,6 +8052,13 @@ const DEFAULT_CAPITAL_SOURCES = [
     window.autoBackupOnAppLeave = autoBackupOnAppLeave;
     window.autoBackupAllConnected = autoBackupAllConnected;
     window.isAutoGDriveSyncEnabled = isAutoGDriveSyncEnabled;
+    window.buildDueCollectionMessage = buildDueCollectionMessage;
+    window.openSignalExportModal = openSignalExportModal;
+    window.closeSignalExportModal = closeSignalExportModal;
+    window.updateSignalExportOpt = updateSignalExportOpt;
+    window.copySignalExportMessage = copySignalExportMessage;
+    window.shareSignalExportMessage = shareSignalExportMessage;
+    window.downloadSignalExportMessage = downloadSignalExportMessage;
 
 
     // KHỞI ĐỘNG CHẠY NGAY - BẢN CHUẨN OFFLINE (bỏ cloud/login hoàn toàn)
