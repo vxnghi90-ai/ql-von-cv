@@ -978,6 +978,7 @@ const DEFAULT_CAPITAL_SOURCES = [
                 state.interestWithdrawals = data.interestWithdrawals || [];
                 state.partnerWithdrawals = data.partnerWithdrawals || [];
                 state.paidSourceInterests = data.paidSourceInterests || [];
+                state.businessInterestTransfers = data.businessInterestTransfers || [];
                 if (data.customBaseTongLaiThucThu !== undefined) state.customBaseTongLaiThucThu = data.customBaseTongLaiThucThu;
                 state.isUnlocked = true;
                 state.lastLocalChangeAt = Number(data.backupAt || localStorage.getItem('loan_last_local_change') || Date.now());
@@ -1057,6 +1058,7 @@ const DEFAULT_CAPITAL_SOURCES = [
         interestWithdrawals: state.interestWithdrawals,
         partnerWithdrawals: state.partnerWithdrawals || [],
         paidSourceInterests: state.paidSourceInterests || [],
+        businessInterestTransfers: state.businessInterestTransfers || [],
         customBaseTongLaiThucThu: state.customBaseTongLaiThucThu !== undefined ? state.customBaseTongLaiThucThu : 3763899,
         backupAt: at,
         deviceId: getDeviceId()
@@ -1071,6 +1073,7 @@ const DEFAULT_CAPITAL_SOURCES = [
       state.interestWithdrawals = data.interestWithdrawals || [];
       state.partnerWithdrawals = data.partnerWithdrawals || [];
       state.paidSourceInterests = data.paidSourceInterests || [];
+      state.businessInterestTransfers = data.businessInterestTransfers || [];
       if (data.customBaseTongLaiThucThu !== undefined) state.customBaseTongLaiThucThu = data.customBaseTongLaiThucThu;
       normalizeAllMaHopDong();
       recalculateAllDueDates();
@@ -1541,6 +1544,7 @@ const DEFAULT_CAPITAL_SOURCES = [
       interestWithdrawals: [],
       partnerWithdrawals: [],
       paidSourceInterests: [],
+      businessInterestTransfers: [],
       customBaseTongLaiThucThu: 3763899,
       lastLocalChangeAt: 0,
       dataDirtySinceBackup: false,
@@ -1659,6 +1663,7 @@ const DEFAULT_CAPITAL_SOURCES = [
           state.interestWithdrawals = (data.interestWithdrawals || []).filter(w => w.MaRut !== 'RW1');
           state.partnerWithdrawals = data.partnerWithdrawals || [];
           state.paidSourceInterests = data.paidSourceInterests || [];
+          state.businessInterestTransfers = data.businessInterestTransfers || [];
           state.customBaseTongLaiThucThu = data.customBaseTongLaiThucThu !== undefined ? data.customBaseTongLaiThucThu : 3763899;
           state.password = pin;
           state.isUnlocked = true;
@@ -1704,6 +1709,7 @@ const DEFAULT_CAPITAL_SOURCES = [
         state.interestWithdrawals = safeGetLocal('loan_interest_withdrawals', []);
         state.partnerWithdrawals = safeGetLocal('loan_partner_withdrawals', []);
         state.paidSourceInterests = [];
+        state.businessInterestTransfers = [];
         
         localStorage.removeItem('loan_customers');
         localStorage.removeItem('loan_contracts');
@@ -1719,6 +1725,7 @@ const DEFAULT_CAPITAL_SOURCES = [
         state.interestWithdrawals = [];
         state.partnerWithdrawals = [];
         state.paidSourceInterests = [];
+        state.businessInterestTransfers = [];
       }
       
       saveStateOfflineAndRefresh(true);
@@ -2331,7 +2338,7 @@ const DEFAULT_CAPITAL_SOURCES = [
       
       if (sourceId) {
         const src = state.capitalSources.find(s => s.MaNguon === sourceId);
-        if (!src) return 0;
+        if (!src || isNonLendingSource(src)) return 0; // Nguồn ngoài hệ thống / KD khác: không cho vay
         const details = calculateCapitalSourceDetails(src);
         let alreadyAllocated = 0;
         activeContracts.forEach(c => {
@@ -2345,6 +2352,7 @@ const DEFAULT_CAPITAL_SOURCES = [
       } else {
         let totalAvailable = 0;
         state.capitalSources.forEach(src => {
+          if (isNonLendingSource(src)) return;
           const details = calculateCapitalSourceDetails(src);
           let alreadyAllocated = 0;
           activeContracts.forEach(c => {
@@ -2367,8 +2375,10 @@ const DEFAULT_CAPITAL_SOURCES = [
       const todayStr = new Date().toISOString().split('T')[0];
       const editingId = (state.editingContract && state.editingContract.MaHopDong) || null;
       const activeContracts = state.contracts.filter(c => c.TrangThai === 'Đang vay' && c.MaHopDong !== editingId);
-      // sort sources by LaiSuatThang ascending (lowest cost first)
-      const sortedSources = [...state.capitalSources].sort((a, b) => (a.LaiSuatThang || 0) - (b.LaiSuatThang || 0));
+      // sort sources by LaiSuatThang ascending (lowest cost first) — bỏ nguồn không cho vay (KD khác)
+      const sortedSources = [...state.capitalSources]
+        .filter(s => !isNonLendingSource(s))
+        .sort((a, b) => (a.LaiSuatThang || 0) - (b.LaiSuatThang || 0));
       let remaining = Number(soTienVay);
       const allocation = [];
       for (const src of sortedSources) {
@@ -2565,7 +2575,11 @@ const DEFAULT_CAPITAL_SOURCES = [
 
       state.capitalSources.forEach(src => {
         const details = calculateCapitalSourceDetails(src);
-        stats.tongVonDauVao += details.tongVonHienTai; stats.tongChiPhiLaiNguon += details.chiPhiLaiTichLuy;
+        // Nguồn KD khác (ngoài cho vay): vẫn hiện chi tiết nhưng không cộng vào tổng vốn cho vay
+        if (!isNonLendingSource(src)) {
+          stats.tongVonDauVao += details.tongVonHienTai;
+          stats.tongChiPhiLaiNguon += details.chiPhiLaiTichLuy;
+        }
         let duNoChoVayCuaNguon = 0;
         state.contracts.forEach(c => { if (c.TrangThai === 'Đang vay') { const activeSeg = (c.LichSuNguon || []).find(seg => seg.NgayKetThuc === null && seg.MaNguon === src.MaNguon); if (activeSeg) duNoChoVayCuaNguon += activeSeg.SoTien; } });
 
@@ -2679,9 +2693,56 @@ const DEFAULT_CAPITAL_SOURCES = [
       // Lãi Thực tế của chủ sở hữu = Lãi Thực Đã Thu - Lợi nhuận dòng đối tác
       stats.laiThucTe = stats.loiNhuanRongThucTe - stats.laiDoiTac;
       stats.soLaiOwnerDaRut = (state.interestWithdrawals || []).reduce((sum, w) => sum + Number(w.SoTien || 0), 0);
-      stats.soLaiOwnerConLai = stats.laiThucTe - stats.soLaiOwnerDaRut;
+      // Lãi chuyển sang kinh doanh khác (ròng = đã rút sang KD − đã trả lại hệ thống)
+      stats.soLaiChuyenKD = getBusinessInterestTransferNet();
+      stats.soLaiChuyenKDDaRut = (state.businessInterestTransfers || [])
+        .filter(t => t.Loai === 'RutSangKD')
+        .reduce((s, t) => s + Number(t.SoTien || 0), 0);
+      stats.soLaiChuyenKDDaTra = (state.businessInterestTransfers || [])
+        .filter(t => t.Loai === 'TraLaiHeThong')
+        .reduce((s, t) => s + Number(t.SoTien || 0), 0);
+      // Lãi thực còn lại = lãi chủ − đã rút chủ − đã chuyển KD khác (ròng)
+      stats.soLaiOwnerConLai = stats.laiThucTe - stats.soLaiOwnerDaRut - stats.soLaiChuyenKD;
 
       return stats;
+    }
+
+    const MA_NGUON_KD_KHAC = 'TIEN_KD_KHAC';
+
+    function isNonLendingSource(src) {
+      if (!src) return false;
+      return src.KhongChoVay === true || src.LoaiNguon === 'NgoaiHeThong' || src.MaNguon === MA_NGUON_KD_KHAC;
+    }
+
+    /** Ròng lãi đã chuyển sang KD khác (rút − trả lại) */
+    function getBusinessInterestTransferNet() {
+      return (state.businessInterestTransfers || []).reduce((sum, t) => {
+        const amt = Number(t.SoTien || 0);
+        if (t.Loai === 'RutSangKD') return sum + amt;
+        if (t.Loai === 'TraLaiHeThong') return sum - amt;
+        return sum;
+      }, 0);
+    }
+
+    function ensureBusinessCapitalSource() {
+      let src = state.capitalSources.find(s => s.MaNguon === MA_NGUON_KD_KHAC);
+      if (!src) {
+        src = {
+          MaNguon: MA_NGUON_KD_KHAC,
+          TenNguon: 'Tiền KD khác (từ lãi)',
+          LaiSuatThang: 0,
+          KhongChoVay: true,
+          LoaiNguon: 'NgoaiHeThong',
+          GhiChu: 'Tiền lãi rút sang kinh doanh khác — không dùng cho vay trong hệ thống',
+          LichSuBienDong: []
+        };
+        state.capitalSources.push(src);
+      } else {
+        src.KhongChoVay = true;
+        src.LoaiNguon = 'NgoaiHeThong';
+        if (!src.LichSuBienDong) src.LichSuBienDong = [];
+      }
+      return src;
     }
 
     // === DARK / LIGHT THEME TOGGLE ===
@@ -3970,6 +4031,7 @@ const DEFAULT_CAPITAL_SOURCES = [
         interestWithdrawals: state.interestWithdrawals,
         partnerWithdrawals: state.partnerWithdrawals || [],
         paidSourceInterests: state.paidSourceInterests || [],
+        businessInterestTransfers: state.businessInterestTransfers || [],
         customBaseTongLaiThucThu: state.customBaseTongLaiThucThu !== undefined ? state.customBaseTongLaiThucThu : 3763899
       });
       const encrypted = encrypt(state.password, rawData);
@@ -4006,6 +4068,7 @@ const DEFAULT_CAPITAL_SOURCES = [
             state.interestWithdrawals = d.interestWithdrawals || [];
             state.partnerWithdrawals = d.partnerWithdrawals || [];
             state.paidSourceInterests = d.paidSourceInterests || [];
+            state.businessInterestTransfers = d.businessInterestTransfers || [];
             if (d.customBaseTongLaiThucThu !== undefined) state.customBaseTongLaiThucThu = d.customBaseTongLaiThucThu;
             normalizeAllMaHopDong();
             recalculateAllDueDates();
@@ -4025,7 +4088,7 @@ const DEFAULT_CAPITAL_SOURCES = [
       // fallback
       showConfirm("Khôi phục mặc định?", "Toàn bộ dữ liệu hiện tại sẽ bị xóa để đưa về mẫu gốc của Excel?", () => {
         state.customers = JSON.parse(JSON.stringify(DEFAULT_CUSTOMERS)); state.contracts = JSON.parse(JSON.stringify(DEFAULT_CONTRACTS)); state.payments = []; state.capitalSources = JSON.parse(JSON.stringify(DEFAULT_CAPITAL_SOURCES));
-        state.interestWithdrawals = []; state.partnerWithdrawals = []; state.paidSourceInterests = [];
+        state.interestWithdrawals = []; state.partnerWithdrawals = []; state.paidSourceInterests = []; state.businessInterestTransfers = [];
         saveStateOfflineAndRefresh(true); showNotification("Đã đưa hệ thống về dữ liệu mẫu gốc!");
       });
     }
@@ -4055,7 +4118,7 @@ const DEFAULT_CAPITAL_SOURCES = [
         const tienLaiThuc = statsObj.loiNhuanRongThucTe;
         const laiDoiTac = statsObj.laiDoiTac || 0;
         const tongLaiConThucTe = tienLaiThuc - laiDoiTac - tongRutLai;
-        const laiThucConLai = tienLaiThuc - statsObj.soLaiDoiTacDaRut - statsObj.soLaiOwnerDaRut;
+        const laiThucConLai = tienLaiThuc - statsObj.soLaiDoiTacDaRut - statsObj.soLaiOwnerDaRut - (statsObj.soLaiChuyenKD || 0);
 
         // Calendar computation for due dates - placed early so it can be referenced in the dashboard HTML string higher up
         const calSection = (() => {
@@ -4470,7 +4533,7 @@ const DEFAULT_CAPITAL_SOURCES = [
                   <div class="mt-2 text-lg font-black text-emerald-700 tracking-tight">${formatVND(laiThucConLai)}</div>
                 </div>
                 <div class="text-[10px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 font-medium">
-                  Lãi thực trừ tổng lãi đã rút
+                  Trừ rút chủ + lãi chuyển KD khác
                 </div>
               </div>
             </div>
@@ -4506,117 +4569,96 @@ const DEFAULT_CAPITAL_SOURCES = [
             </div>
           </div>
 
-          <!-- TẦNG 2: HỆ THỐNG QUẢN LÝ LÃI & LỢI NHUẬN RÒNG (Grid 50/50) -->
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          <!-- TẦNG 2: 3 Ô QUẢN LÝ LÃI (Đối tác / Thực tế / Chuyển KD khác) -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
             
-            <!-- Bảng QUẢN LÝ LÃI ĐỐI TÁC -->
-            <div class="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row justify-between gap-6">
-              <!-- Cột trái card: Thông tin lãi -->
-              <div class="flex-1 flex flex-col justify-between">
-                <div>
-                  <div class="flex items-center justify-between border-b pb-2 mb-3">
-                    <span class="font-extrabold text-sm text-amber-700 uppercase flex items-center gap-1.5">
-                      <span>🤝</span> QUẢN LÝ LÃI ĐỐI TÁC (${statsObj.phanTramChiaLaiDoiTac ?? 50}%)
-                    </span>
-                    <span class="bg-amber-50 text-amber-700 font-bold px-2 py-0.5 rounded-lg text-[10px] border border-amber-100">Chia sẻ</span>
-                  </div>
-                  <p class="text-xs text-slate-450 leading-relaxed font-semibold">
-                    Trích <strong>${statsObj.phanTramChiaLaiDoiTac ?? 50}% Lợi Nhuận Ròng</strong> cho đối tác đầu tư.
-                  </p>
-                </div>
-                <div class="mt-4">
-                  <span class="text-xs text-slate-500 font-bold">Lãi khả dụng:</span>
-                  <div class="text-xl font-black text-amber-700 tracking-tight mt-0.5">${formatVND(statsObj.soLaiDoiTacConLai)}</div>
-                </div>
+            <!-- Ô 1: LÃI ĐỐI TÁC (nhỏ hơn) -->
+            <div class="bg-white border border-slate-200 p-3.5 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col gap-3">
+              <div class="flex items-center justify-between border-b pb-1.5">
+                <span class="font-extrabold text-[11px] text-amber-700 uppercase flex items-center gap-1">
+                  <span>🤝</span> LÃI ĐỐI TÁC (${statsObj.phanTramChiaLaiDoiTac ?? 50}%)
+                </span>
+                <span class="bg-amber-50 text-amber-700 font-bold px-1.5 py-0.5 rounded text-[9px] border border-amber-100">Chia sẻ</span>
               </div>
-
-              <!-- Cột phải card: Progress & Nút hành động -->
-              <div class="flex-1 flex flex-col justify-between items-stretch md:items-end min-w-[200px] gap-4">
-                <!-- Progress bar -->
-                ${(() => {
-                  const pct = statsObj.laiDoiTac > 0 ? Math.min(100, Math.round((statsObj.soLaiDoiTacDaRut / statsObj.laiDoiTac) * 100)) : 0;
-                  return `
-                    <div class="w-full">
-                      <div class="flex justify-between text-[10px] font-bold mb-1.5">
-                        <span class="text-slate-400 uppercase">Rút lãi progress (${pct}%)</span>
-                        <span class="text-slate-700 font-extrabold">${formatVND(statsObj.soLaiDoiTacDaRut)} / ${formatVND(statsObj.laiDoiTac)}</span>
-                      </div>
-                      <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden border">
-                        <div class="h-2 bg-amber-500 rounded-full transition-all" style="width: ${pct}%"></div>
-                      </div>
+              <p class="text-[10px] text-slate-500 font-semibold leading-snug">Trích ${statsObj.phanTramChiaLaiDoiTac ?? 50}% LN ròng cho đối tác.</p>
+              <div>
+                <span class="text-[10px] text-slate-500 font-bold">Khả dụng:</span>
+                <div class="text-base font-black text-amber-700 tracking-tight">${formatVND(statsObj.soLaiDoiTacConLai)}</div>
+              </div>
+              ${(() => {
+                const pct = statsObj.laiDoiTac > 0 ? Math.min(100, Math.round((statsObj.soLaiDoiTacDaRut / statsObj.laiDoiTac) * 100)) : 0;
+                return `
+                  <div>
+                    <div class="flex justify-between text-[9px] font-bold mb-1">
+                      <span class="text-slate-400">Đã rút ${pct}%</span>
+                      <span class="text-slate-600">${formatVND(statsObj.soLaiDoiTacDaRut)}</span>
                     </div>
-                  `;
-                })()}
-
-                <!-- Nút hành động ở góc phải dưới -->
-                <div class="flex flex-wrap gap-2 justify-end mt-auto">
-                  <button onclick="(() => { const src = state.capitalSources.find(s => s.MaNguon === 'GOP_VON' || s.MaNguon === 'TIEN_DOI_TAC' || (s.TenNguon || '').toLowerCase().includes('đối tác')) || state.capitalSources[0]; if (src) window.openCapitalSourceModal(src.MaNguon); })()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[10px] px-3 py-2 rounded-xl transition active:scale-95">
-                    Cấu hình
-                  </button>
-                  <button onclick="window.openPartnerWithdrawModal && window.openPartnerWithdrawModal('RutRaNgoai')" class="bg-slate-900 hover:bg-slate-850 text-white font-bold text-[10px] px-3 py-2 rounded-xl transition active:scale-95">
-                    Rút
-                  </button>
-                  <button onclick="window.openPartnerWithdrawModal && window.openPartnerWithdrawModal('NapVaoHeThong')" class="bg-slate-900 hover:bg-slate-850 text-white font-bold text-[10px] px-3 py-2 rounded-xl transition active:scale-95">
-                    Nạp
-                  </button>
-                  <button onclick="window.openPartnerHistoryModal && window.openPartnerHistoryModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-[10px] px-3 py-2 rounded-xl transition active:scale-95 border border-slate-200">
-                    Lịch sử
-                  </button>
-                </div>
+                    <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden border">
+                      <div class="h-1.5 bg-amber-500 rounded-full" style="width: ${pct}%"></div>
+                    </div>
+                  </div>`;
+              })()}
+              <div class="flex flex-wrap gap-1.5 mt-auto">
+                <button onclick="window.openPartnerWithdrawModal && window.openPartnerWithdrawModal('RutRaNgoai')" class="bg-slate-900 text-white font-bold text-[9px] px-2.5 py-1.5 rounded-lg">Rút</button>
+                <button onclick="window.openPartnerWithdrawModal && window.openPartnerWithdrawModal('NapVaoHeThong')" class="bg-slate-900 text-white font-bold text-[9px] px-2.5 py-1.5 rounded-lg">Nạp</button>
+                <button onclick="window.openPartnerHistoryModal && window.openPartnerHistoryModal()" class="bg-slate-100 text-slate-600 font-bold text-[9px] px-2.5 py-1.5 rounded-lg border">Lịch sử</button>
               </div>
             </div>
 
-            <!-- Bảng QUẢN LÝ LÃI THỰC TẾ -->
-            <div class="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row justify-between gap-6">
-              <!-- Cột trái card: Thông tin lãi -->
-              <div class="flex-1 flex flex-col justify-between">
-                <div>
-                  <div class="flex items-center justify-between border-b pb-2 mb-3">
-                    <span class="font-extrabold text-sm text-indigo-700 uppercase flex items-center gap-1.5">
-                      <span>💼</span> QUẢN LÝ LÃI THỰC TẾ
-                    </span>
-                    <span class="bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded-lg text-[10px] border border-indigo-100">Chủ sở hữu</span>
-                  </div>
-                  <p class="text-xs text-slate-450 leading-relaxed font-semibold">
-                    Phần Lãi Thực Tế còn lại của hệ thống sau khi trích chia lãi đối tác.
-                  </p>
-                </div>
-                <div class="mt-4">
-                  <span class="text-xs text-slate-500 font-bold">Lãi khả dụng:</span>
-                  <div class="text-xl font-black text-indigo-700 tracking-tight mt-0.5">${formatVND(statsObj.soLaiOwnerConLai)}</div>
-                </div>
+            <!-- Ô 2: LÃI THỰC TẾ (nhỏ hơn) -->
+            <div class="bg-white border border-slate-200 p-3.5 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col gap-3">
+              <div class="flex items-center justify-between border-b pb-1.5">
+                <span class="font-extrabold text-[11px] text-indigo-700 uppercase flex items-center gap-1">
+                  <span>💼</span> LÃI THỰC TẾ
+                </span>
+                <span class="bg-indigo-50 text-indigo-700 font-bold px-1.5 py-0.5 rounded text-[9px] border border-indigo-100">Chủ SH</span>
               </div>
-
-              <!-- Cột phải card: Progress & Nút hành động -->
-              <div class="flex-1 flex flex-col justify-between items-stretch md:items-end min-w-[200px] gap-4">
-                <!-- Progress bar -->
-                ${(() => {
-                  const pctOwner = statsObj.laiThucTe > 0 ? Math.min(100, Math.round((statsObj.soLaiOwnerDaRut / statsObj.laiThucTe) * 100)) : 0;
-                  return `
-                    <div class="w-full">
-                      <div class="flex justify-between text-[10px] font-bold mb-1.5">
-                        <span class="text-slate-400 uppercase">Rút lãi progress (${pctOwner}%)</span>
-                        <span class="text-slate-700 font-extrabold">${formatVND(statsObj.soLaiOwnerDaRut)} / ${formatVND(statsObj.laiThucTe)}</span>
-                      </div>
-                      <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden border">
-                        <div class="h-2 bg-indigo-500 rounded-full transition-all" style="width: ${pctOwner}%"></div>
-                      </div>
+              <p class="text-[10px] text-slate-500 font-semibold leading-snug">Lãi hệ thống sau chia đối tác (đã trừ rút + chuyển KD).</p>
+              <div>
+                <span class="text-[10px] text-slate-500 font-bold">Khả dụng:</span>
+                <div class="text-base font-black text-indigo-700 tracking-tight">${formatVND(statsObj.soLaiOwnerConLai)}</div>
+              </div>
+              ${(() => {
+                const pctOwner = statsObj.laiThucTe > 0 ? Math.min(100, Math.round(((statsObj.soLaiOwnerDaRut + (statsObj.soLaiChuyenKD || 0)) / statsObj.laiThucTe) * 100)) : 0;
+                return `
+                  <div>
+                    <div class="flex justify-between text-[9px] font-bold mb-1">
+                      <span class="text-slate-400">Đã dùng ${pctOwner}%</span>
+                      <span class="text-slate-600">${formatVND((statsObj.soLaiOwnerDaRut || 0) + (statsObj.soLaiChuyenKD || 0))}</span>
                     </div>
-                  `;
-                })()}
+                    <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden border">
+                      <div class="h-1.5 bg-indigo-500 rounded-full" style="width: ${pctOwner}%"></div>
+                    </div>
+                  </div>`;
+              })()}
+              <div class="flex flex-wrap gap-1.5 mt-auto">
+                <button onclick="window.openOwnerWithdrawModal && window.openOwnerWithdrawModal('RutKhoiHeThong')" class="bg-slate-900 text-white font-bold text-[9px] px-2.5 py-1.5 rounded-lg">Rút</button>
+                <button onclick="window.openOwnerWithdrawModal && window.openOwnerWithdrawModal('NapVonTuCo')" class="bg-slate-900 text-white font-bold text-[9px] px-2.5 py-1.5 rounded-lg">Nạp</button>
+                <button onclick="window.openOwnerHistoryModal && window.openOwnerHistoryModal()" class="bg-slate-100 text-slate-600 font-bold text-[9px] px-2.5 py-1.5 rounded-lg border">Lịch sử</button>
+              </div>
+            </div>
 
-                <!-- Nút hành động ở góc phải dưới -->
-                <div class="flex flex-wrap gap-2 justify-end mt-auto">
-                  <button onclick="window.openOwnerWithdrawModal && window.openOwnerWithdrawModal('RutKhoiHeThong')" class="bg-slate-900 hover:bg-slate-850 text-white font-bold text-[10px] px-3 py-2 rounded-xl transition active:scale-95">
-                    Rút
-                  </button>
-                  <button onclick="window.openOwnerWithdrawModal && window.openOwnerWithdrawModal('NapVonTuCo')" class="bg-slate-900 hover:bg-slate-850 text-white font-bold text-[10px] px-3 py-2 rounded-xl transition active:scale-95">
-                    Nạp
-                  </button>
-                  <button onclick="window.openOwnerHistoryModal && window.openOwnerHistoryModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-[10px] px-3 py-2 rounded-xl transition active:scale-95 border border-slate-200">
-                    Lịch sử
-                  </button>
-                </div>
+            <!-- Ô 3: LÃI CHUYỂN KINH DOANH KHÁC (mới) -->
+            <div class="bg-white border border-teal-200 p-3.5 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col gap-3 ring-1 ring-teal-50">
+              <div class="flex items-center justify-between border-b border-teal-100 pb-1.5">
+                <span class="font-extrabold text-[11px] text-teal-800 uppercase flex items-center gap-1">
+                  <span>🏪</span> LÃI CHUYỂN KD KHÁC
+                </span>
+                <span class="bg-teal-50 text-teal-700 font-bold px-1.5 py-0.5 rounded text-[9px] border border-teal-100">Ngoài vay</span>
+              </div>
+              <p class="text-[10px] text-slate-500 font-semibold leading-snug">Mượn lãi sang kinh doanh khác. <b>Không tính vào vốn cho vay</b>.</p>
+              <div>
+                <span class="text-[10px] text-slate-500 font-bold">Đang ở KD khác:</span>
+                <div class="text-base font-black text-teal-700 tracking-tight">${formatVND(statsObj.soLaiChuyenKD || 0)}</div>
+              </div>
+              <div class="text-[9px] text-slate-500 space-y-0.5">
+                <div class="flex justify-between"><span>Đã rút sang KD:</span><b class="text-slate-700">${formatVND(statsObj.soLaiChuyenKDDaRut || 0)}</b></div>
+                <div class="flex justify-between"><span>Đã trả lại lãi:</span><b class="text-emerald-600">${formatVND(statsObj.soLaiChuyenKDDaTra || 0)}</b></div>
+              </div>
+              <div class="flex flex-wrap gap-1.5 mt-auto">
+                <button onclick="window.openBusinessTransferModal && window.openBusinessTransferModal('RutSangKD')" class="bg-teal-700 hover:bg-teal-800 text-white font-bold text-[9px] px-2.5 py-1.5 rounded-lg">Rút sang KD</button>
+                <button onclick="window.openBusinessTransferModal && window.openBusinessTransferModal('TraLaiHeThong')" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[9px] px-2.5 py-1.5 rounded-lg">Trả lại lãi</button>
+                <button onclick="window.openBusinessTransferHistoryModal && window.openBusinessTransferHistoryModal()" class="bg-slate-100 text-slate-600 font-bold text-[9px] px-2.5 py-1.5 rounded-lg border">Lịch sử</button>
               </div>
             </div>
 
@@ -4857,18 +4899,20 @@ const DEFAULT_CAPITAL_SOURCES = [
         state.capitalSources.forEach(src => {
           const det = statsObj.sourceDetails[src.MaNguon] || { tongVonHienTai: 0, duNoChoVay: 0 };
           const vonGoc = det.tongVonHienTai;
-          const vonDaDung = det.duNoChoVay || 0;
-          const vonHienTai = vonGoc - vonDaDung;
+          const isNgoaiVay = isNonLendingSource(src);
+          const vonDaDung = isNgoaiVay ? 0 : (det.duNoChoVay || 0);
+          const vonHienTai = isNgoaiVay ? vonGoc : (vonGoc - vonDaDung);
           const vonHienTaiCls = vonHienTai >= 0 ? 'text-emerald-700' : 'text-rose-600 font-bold';
           
           const isPartnerSrc = src.MaNguon === 'GOP_VON' || src.MaNguon === 'TIEN_DOI_TAC' || (src.TenNguon || '').toLowerCase().includes('đối tác') || src.PhanTramChiaLai !== undefined;
           const partnerInfoHTML = isPartnerSrc ? `<div class="text-[11px] text-amber-700 font-bold mt-0.5 flex items-center gap-1"><span>🤝 Chia lãi đối tác:</span> <span class="bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded">${src.PhanTramChiaLai ?? 50}%</span> ${src.PhamViChiaLai === 'LoaiTru' && (src.HopDongLoaiTru || []).length > 0 ? `<span class="text-rose-600 font-bold text-[10px]">(Loại trừ ${src.HopDongLoaiTru.length} HĐ)</span>` : '<span class="text-emerald-700 text-[10px]">(Tất cả HĐ)</span>'}</div>` : '';
 
-          rows += `<tr class="border-t hover:bg-slate-50">
+          const ngoaiVayBadge = isNgoaiVay ? `<span class="ml-1.5 bg-teal-50 text-teal-700 border border-teal-200 text-[9px] font-extrabold px-1.5 py-0.5 rounded">Không cho vay · Chỉ theo dõi lãi rút</span>` : '';
+          rows += `<tr class="border-t hover:bg-slate-50 ${isNgoaiVay ? 'bg-teal-50/40' : ''}">
             <td class="p-3 font-mono text-xs font-bold text-slate-400">${src.MaNguon}</td>
-            <td class="p-3 font-bold text-slate-800">${src.TenNguon}${partnerInfoHTML}</td>
+            <td class="p-3 font-bold text-slate-800">${src.TenNguon}${ngoaiVayBadge}${partnerInfoHTML}</td>
             <td class="p-3 font-extrabold text-slate-900 text-right">${formatVND(vonGoc)}</td>
-            <td class="p-3 font-bold text-amber-700 text-right">${formatVND(vonDaDung)}</td>
+            <td class="p-3 font-bold text-amber-700 text-right">${isNgoaiVay ? '—' : formatVND(vonDaDung)}</td>
             <td class="p-3 font-extrabold ${vonHienTaiCls} text-right">${formatVND(vonHienTai)}</td>
             <td class="p-3 text-center"><button onclick="window.openCapitalAdjustmentModal && window.openCapitalAdjustmentModal('${src.MaNguon}')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl text-xs font-bold transition-all">Biến động vốn</button></td>
             <td class="p-3 text-center"><button onclick="window.openCapitalSourceModal && window.openCapitalSourceModal('${src.MaNguon}')" class="text-indigo-600 hover:bg-indigo-800 font-semibold px-2">Sửa</button><button onclick="window.handleDeleteCapitalSource && window.handleDeleteCapitalSource('${src.MaNguon}')" class="text-rose-600 hover:bg-rose-800 font-semibold px-2">Xóa</button></td>
@@ -4880,6 +4924,7 @@ const DEFAULT_CAPITAL_SOURCES = [
                 <div>
                   <span class="bg-slate-100 text-slate-500 font-mono text-xs font-bold px-2 py-0.5 rounded-md border">${src.MaNguon}</span>
                   <div class="font-extrabold text-slate-900 text-base mt-1">${src.TenNguon}</div>
+                  ${isNgoaiVay ? `<div class="text-[10px] text-teal-700 font-bold mt-0.5">🏪 Không cho vay · Chỉ theo dõi lãi rút sang KD</div>` : ''}
                   ${partnerInfoHTML}
                 </div>
                 <button onclick="window.openCapitalAdjustmentModal && window.openCapitalAdjustmentModal('${src.MaNguon}')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl text-xs font-bold transition-all">Biến động vốn</button>
@@ -4887,15 +4932,15 @@ const DEFAULT_CAPITAL_SOURCES = [
 
               <div class="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-center">
                 <div>
-                  <div class="text-[10px] text-slate-500 font-bold uppercase">Vốn Gốc</div>
+                  <div class="text-[10px] text-slate-500 font-bold uppercase">${isNgoaiVay ? 'Đã rút' : 'Vốn Gốc'}</div>
                   <div class="text-xs font-extrabold text-slate-900 mt-0.5">${formatVND(vonGoc)}</div>
                 </div>
                 <div>
                   <div class="text-[10px] text-amber-700 font-bold uppercase">Đã Dùng</div>
-                  <div class="text-xs font-extrabold text-amber-700 mt-0.5">${formatVND(vonDaDung)}</div>
+                  <div class="text-xs font-extrabold text-amber-700 mt-0.5">${isNgoaiVay ? '—' : formatVND(vonDaDung)}</div>
                 </div>
                 <div>
-                  <div class="text-[10px] text-emerald-700 font-bold uppercase">Còn Dư</div>
+                  <div class="text-[10px] text-emerald-700 font-bold uppercase">${isNgoaiVay ? 'Số dư' : 'Còn Dư'}</div>
                   <div class="text-xs font-extrabold ${vonHienTaiCls} mt-0.5">${formatVND(vonHienTai)}</div>
                 </div>
               </div>
@@ -5331,7 +5376,7 @@ const DEFAULT_CAPITAL_SOURCES = [
       if (state.customConfirm.show) finalHTML += `<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div class="bg-white p-6 rounded-2xl max-w-sm w-full"><h3 class="font-bold text-lg text-slate-900">${state.customConfirm.title}</h3><p class="mt-2 text-slate-600 text-sm">${state.customConfirm.message}</p><div class="mt-6 flex justify-end gap-2"><button onclick="if(window.state){window.state.customConfirm.show=false;} if(window.renderApp) window.renderApp()" class="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-sm font-semibold">Hủy</button><button onclick="if(window.state && window.state.customConfirm && window.state.customConfirm.action) window.state.customConfirm.action(); if(window.state){window.state.customConfirm.show=false;} if(window.renderApp) window.renderApp()" class="px-4 py-2 bg-rose-600 text-white rounded-xl text-sm font-semibold shadow-md">Xác nhận</button></div></div></div>`;
       if (state.customAlert.show) finalHTML += `<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div class="bg-white p-6 rounded-2xl max-w-sm w-full"><h3 class="font-bold text-lg text-slate-900">${state.customAlert.title}</h3><div class="mt-2 text-slate-600 text-sm leading-relaxed">${state.customAlert.message}</div><button onclick="if(window.state){window.state.customAlert.show=false;} if(window.renderApp) window.renderApp()" class="mt-6 w-full px-4 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-semibold shadow-md">Đã hiểu</button></div></div>`;
       
-      finalHTML += renderCustomerModalHTML() + renderCapitalSourceModalHTML() + renderContractModalHTML() + renderPaymentModalHTML() + renderCapitalAdjustmentModalHTML() + renderOwnerWithdrawModalHTML() + renderOwnerHistoryModalHTML() + renderSourcePaidModalHTML() + renderSourcePaidHistoryModalHTML() + renderPartnerWithdrawModalHTML() + renderPartnerHistoryModalHTML() + renderExportExcelModalHTML() + renderChangePINModalHTML();
+      finalHTML += renderCustomerModalHTML() + renderCapitalSourceModalHTML() + renderContractModalHTML() + renderPaymentModalHTML() + renderCapitalAdjustmentModalHTML() + renderOwnerWithdrawModalHTML() + renderOwnerHistoryModalHTML() + renderSourcePaidModalHTML() + renderSourcePaidHistoryModalHTML() + renderPartnerWithdrawModalHTML() + renderPartnerHistoryModalHTML() + renderBusinessTransferModalHTML() + renderBusinessTransferHistoryModalHTML() + renderExportExcelModalHTML() + renderChangePINModalHTML();
 
       container.innerHTML = finalHTML;
       if (state.activeTab === 'dashboard') {
@@ -6490,6 +6535,190 @@ const DEFAULT_CAPITAL_SOURCES = [
       }
     }
 
+    // === QUẢN LÝ LÃI CHUYỂN KINH DOANH KHÁC ===
+    function openBusinessTransferModal(loai = 'RutSangKD') {
+      window.businessTransferType = loai;
+      if (window.renderApp) window.renderApp();
+      const modal = document.getElementById('business-transfer-modal');
+      if (modal) modal.classList.remove('hidden');
+      const select = document.querySelector('#business-transfer-modal select[name="Loai"]');
+      if (select) select.value = loai;
+    }
+    window.openBusinessTransferModal = openBusinessTransferModal;
+
+    function openBusinessTransferHistoryModal() {
+      if (window.renderApp) window.renderApp();
+      const modal = document.getElementById('business-transfer-history-modal');
+      if (modal) modal.classList.remove('hidden');
+    }
+    window.openBusinessTransferHistoryModal = openBusinessTransferHistoryModal;
+
+    function renderBusinessTransferModalHTML() {
+      const statsObj = getStats();
+      const defaultType = window.businessTransferType || 'RutSangKD';
+      const maxRut = Math.max(0, Number(statsObj.soLaiOwnerConLai || 0));
+      const maxTra = Math.max(0, Number(statsObj.soLaiChuyenKD || 0));
+      return `
+        <div id="business-transfer-modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center z-50 p-3">
+          <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl animate-scaleIn">
+            <div class="flex justify-between items-center mb-4 border-b pb-2">
+              <h3 class="font-extrabold text-slate-900 text-base">🏪 Lãi chuyển kinh doanh khác</h3>
+              <button type="button" onclick="window.closeModal && window.closeModal('business-transfer-modal')" class="p-1 text-slate-400 hover:text-slate-800">${getIconSVG('x','w-5 h-5')}</button>
+            </div>
+            <form onsubmit="window.handleSaveBusinessTransfer && window.handleSaveBusinessTransfer(event)">
+              <div class="bg-teal-50 border border-teal-200 rounded-xl p-3 mb-4 text-xs space-y-1">
+                <div class="flex justify-between font-semibold text-slate-700"><span>Lãi thực khả dụng:</span><span class="text-indigo-700 font-extrabold">${formatVND(maxRut)}</span></div>
+                <div class="flex justify-between font-semibold text-slate-700"><span>Đang ở KD khác:</span><span class="text-teal-700 font-extrabold">${formatVND(maxTra)}</span></div>
+                <p class="text-[10px] text-slate-500 pt-1">Tiền rút sang KD khác vào nguồn <b>Tiền KD khác (từ lãi)</b> — <b>không dùng để cho vay</b>.</p>
+              </div>
+              <div class="space-y-3 mb-5">
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Loại giao dịch <span class="text-rose-500">*</span></label>
+                  <select name="Loai" class="w-full border p-2.5 text-xs rounded-xl focus:outline-none bg-white font-bold text-slate-800">
+                    <option value="RutSangKD" ${defaultType==='RutSangKD'?'selected':''}>🏪 Rút lãi sang kinh doanh khác</option>
+                    <option value="TraLaiHeThong" ${defaultType==='TraLaiHeThong'?'selected':''}>↩️ Trả lại tiền vào Lãi thực còn lại</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Số tiền (VNĐ) <span class="text-rose-500">*</span></label>
+                  <input type="number" name="SoTien" class="w-full border p-2.5 text-sm rounded-xl focus:outline-none font-extrabold text-teal-700" placeholder="Nhập số tiền..." required min="1" />
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Ngày <span class="text-rose-500">*</span></label>
+                  <input type="date" name="Ngay" value="${todayYMD()}" class="w-full border p-2.5 text-xs rounded-xl focus:outline-none" required />
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Ghi chú</label>
+                  <input name="GhiChu" class="w-full border p-2.5 text-xs rounded-xl focus:outline-none" placeholder="VD: Mượn lãi trả hàng / vốn shop..." />
+                </div>
+              </div>
+              <div class="flex justify-end gap-2">
+                <button type="button" onclick="window.closeModal && window.closeModal('business-transfer-modal')" class="px-4 py-2 bg-slate-100 text-slate-600 font-semibold text-xs rounded-xl">Hủy</button>
+                <button type="submit" class="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-md">Xác nhận</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      `;
+    }
+
+    function handleSaveBusinessTransfer(e) {
+      e.preventDefault();
+      const form = e.target;
+      const loai = form.Loai.value;
+      const amount = Number(form.SoTien.value);
+      const ngay = form.Ngay.value;
+      const ghiChu = (form.GhiChu.value || '').trim();
+      if (!amount || amount <= 0) return showAlert('Lỗi', 'Số tiền không hợp lệ!');
+      if (!ngay) return showAlert('Lỗi', 'Vui lòng chọn ngày!');
+
+      const statsObj = getStats();
+      if (loai === 'RutSangKD') {
+        if (amount > (statsObj.soLaiOwnerConLai || 0)) {
+          return showAlert('Lỗi', `Số tiền vượt quá Lãi thực khả dụng (${formatVND(statsObj.soLaiOwnerConLai)})!`);
+        }
+      } else {
+        if (amount > (statsObj.soLaiChuyenKD || 0)) {
+          return showAlert('Lỗi', `Số trả lại vượt quá tiền đang ở KD khác (${formatVND(statsObj.soLaiChuyenKD)})!`);
+        }
+      }
+
+      const ma = 'BIZ_' + Math.random().toString(36).substring(2, 10).toUpperCase();
+      const rec = { MaGiaoDich: ma, Loai: loai, SoTien: amount, Ngay: ngay, GhiChu: ghiChu };
+      if (!state.businessInterestTransfers) state.businessInterestTransfers = [];
+      state.businessInterestTransfers.unshift(rec);
+
+      const src = ensureBusinessCapitalSource();
+      if (!src.LichSuBienDong) src.LichSuBienDong = [];
+      if (loai === 'RutSangKD') {
+        src.LichSuBienDong.push({
+          Ngay: ngay,
+          SoTien: amount,
+          NoiDung: `Rút lãi sang KD khác (${ghiChu || 'Chuyển sang kinh doanh ngoài hệ thống'})`,
+          MaGiaoDich: ma
+        });
+      } else {
+        src.LichSuBienDong.push({
+          Ngay: ngay,
+          SoTien: -amount,
+          NoiDung: `Trả lại lãi vào hệ thống (${ghiChu || 'Hoàn lãi thực còn lại'})`,
+          MaGiaoDich: ma
+        });
+      }
+
+      saveStateOfflineAndRefresh(true);
+      closeModal('business-transfer-modal');
+      showNotification(loai === 'RutSangKD'
+        ? `Đã rút ${formatVND(amount)} sang kinh doanh khác (không tính cho vay)`
+        : `Đã trả ${formatVND(amount)} về Lãi thực còn lại`);
+    }
+    window.handleSaveBusinessTransfer = handleSaveBusinessTransfer;
+
+    function renderBusinessTransferHistoryModalHTML() {
+      const list = state.businessInterestTransfers || [];
+      let rows = list.map((t, idx) => `
+        <tr class="border-t hover:bg-slate-50">
+          <td class="p-2 text-center text-xs">${idx + 1}</td>
+          <td class="p-2 text-xs font-bold">${formatDate(t.Ngay)}</td>
+          <td class="p-2 text-center">
+            <span class="${t.Loai==='RutSangKD'?'bg-teal-100 text-teal-800':'bg-emerald-100 text-emerald-800'} px-2 py-0.5 rounded text-[10px] font-bold">
+              ${t.Loai==='RutSangKD'?'🏪 Rút sang KD':'↩️ Trả lại lãi'}
+            </span>
+          </td>
+          <td class="p-2 text-right font-extrabold ${t.Loai==='RutSangKD'?'text-teal-700':'text-emerald-700'}">${formatVND(t.SoTien)}</td>
+          <td class="p-2 text-xs text-slate-500">${t.GhiChu || '-'}</td>
+          <td class="p-2 text-center">
+            <button onclick="window.handleDeleteBusinessTransfer && window.handleDeleteBusinessTransfer('${t.MaGiaoDich}')" class="text-rose-600 hover:text-rose-800 text-xs font-bold">Hoàn tác</button>
+          </td>
+        </tr>
+      `).join('');
+      if (!rows) rows = `<tr><td colspan="6" class="p-6 text-center text-slate-400 text-xs">Chưa có giao dịch lãi chuyển KD khác.</td></tr>`;
+      const net = getBusinessInterestTransferNet();
+      return `
+        <div id="business-transfer-history-modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center z-50 p-3">
+          <div class="bg-white rounded-2xl w-full max-w-2xl p-6 h-[75vh] flex flex-col shadow-xl animate-scaleIn">
+            <div class="flex justify-between items-center mb-4 pb-2 border-b">
+              <div>
+                <h3 class="font-extrabold text-slate-900 text-base">📜 Lịch sử lãi chuyển KD khác</h3>
+                <p class="text-[11px] text-slate-500 mt-0.5">Đang ở KD khác (ròng): <span class="font-extrabold text-teal-700">${formatVND(net)}</span></p>
+              </div>
+              <button type="button" onclick="window.closeModal && window.closeModal('business-transfer-history-modal')" class="p-1 text-slate-400 hover:text-slate-800">${getIconSVG('x','w-5 h-5')}</button>
+            </div>
+            <div class="flex-1 overflow-y-auto border rounded-xl">
+              <table class="w-full text-sm text-left">
+                <thead class="bg-slate-50 sticky top-0 text-slate-500 text-xs">
+                  <tr>
+                    <th class="p-2 text-center">STT</th>
+                    <th class="p-2">Ngày</th>
+                    <th class="p-2 text-center">Loại</th>
+                    <th class="p-2 text-right">Số tiền</th>
+                    <th class="p-2">Ghi chú</th>
+                    <th class="p-2 text-center">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function handleDeleteBusinessTransfer(ma) {
+      showConfirm('Hoàn tác giao dịch?', 'Xóa giao dịch này và điều chỉnh lại nguồn Tiền KD khác + Lãi thực còn lại.', () => {
+        const t = (state.businessInterestTransfers || []).find(x => x.MaGiaoDich === ma);
+        if (!t) return;
+        const src = state.capitalSources.find(s => s.MaNguon === MA_NGUON_KD_KHAC);
+        if (src && src.LichSuBienDong) {
+          src.LichSuBienDong = src.LichSuBienDong.filter(tx => tx.MaGiaoDich !== ma);
+        }
+        state.businessInterestTransfers = state.businessInterestTransfers.filter(x => x.MaGiaoDich !== ma);
+        saveStateOfflineAndRefresh(true);
+        showNotification('Đã hoàn tác giao dịch lãi chuyển KD khác!');
+      });
+    }
+    window.handleDeleteBusinessTransfer = handleDeleteBusinessTransfer;
+
     // === QUẢN LÝ LÃI THỰC TẾ (CHỦ SỞ HỮU): Rút / Nạp / Lịch sử ===
     function openOwnerWithdrawModal(kieu = 'RutKhoiHeThong') {
       window.ownerWithdrawType = kieu;
@@ -6744,6 +6973,7 @@ const DEFAULT_CAPITAL_SOURCES = [
         state.interestWithdrawals = [];
         state.partnerWithdrawals = [];
         state.paidSourceInterests = [];
+        state.businessInterestTransfers = [];
         // normalize nguon + mã HĐ
         state.contracts.forEach(c => {
           if (!c.MaNguon) c.MaNguon = 'NGUON_TU_CO';
@@ -6768,6 +6998,7 @@ const DEFAULT_CAPITAL_SOURCES = [
         state.interestWithdrawals = [];
         state.partnerWithdrawals = [];
         state.paidSourceInterests = [];
+        state.businessInterestTransfers = [];
         state.searchTerm = '';
         state.customerSearchTerm = '';
         state.contractCustomerFilter = '';
