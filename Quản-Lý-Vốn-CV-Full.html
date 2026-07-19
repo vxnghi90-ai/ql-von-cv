@@ -1834,6 +1834,34 @@ const DEFAULT_CAPITAL_SOURCES = [
       `;
     }
 
+    /** Hiển thị thông tin tài sản / đồ vật tín chấp trên bảng HĐ */
+    function formatTaiSanHopDongHTML(c) {
+      if (!c) return '<span class="text-slate-300 text-[10px]">—</span>';
+      const loai = String(c.LoaiTaiSan || '').trim();
+      const ten = String(c.TenTaiSan || '').trim();
+      const bien = String(c.BienSo || '').trim();
+      const khung = String(c.SoKhung || '').trim();
+      const may = String(c.SoMay || '').trim();
+      const note = String(c.GhiChu || '').trim();
+      if (!loai && !ten && !bien && !khung && !may) {
+        return '<span class="text-slate-300 text-[10px] font-medium">Tín chấp / không TS</span>';
+      }
+      const title = [loai, ten].filter(Boolean).join(' · ') || 'Tài sản';
+      let html = `<div class="min-w-[120px] max-w-[180px]">`;
+      html += `<div class="font-bold text-slate-800 text-[11px] leading-tight">${title}</div>`;
+      if (bien) html += `<div class="text-[10px] text-indigo-600 font-extrabold tracking-wide">BS: ${bien.toUpperCase()}</div>`;
+      const extras = [];
+      if (khung) extras.push(`Khung: ${khung}`);
+      if (may) extras.push(`Máy: ${may}`);
+      if (extras.length) html += `<div class="text-[9px] text-slate-500 font-medium leading-tight">${extras.join(' · ')}</div>`;
+      if (note) {
+        const safeTitle = note.replace(/"/g, '&quot;');
+        html += `<div class="text-[9px] text-slate-400 italic truncate" title="${safeTitle}">${note}</div>`;
+      }
+      html += `</div>`;
+      return html;
+    }
+
     function formatVND(number) {
       return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(number);
     }
@@ -5126,7 +5154,11 @@ const DEFAULT_CAPITAL_SOURCES = [
           contractList = contractList.filter(item =>
             item.contract.MaHopDong.toLowerCase().includes(search) ||
             (state.customers.find(c => c.MaKH === item.contract.MaKH) || {}).TenKhachHang?.toLowerCase().includes(search) ||
-            (item.contract.TenTaiSan || '').toLowerCase().includes(search)
+            (item.contract.TenTaiSan || '').toLowerCase().includes(search) ||
+            (item.contract.BienSo || '').toLowerCase().includes(search) ||
+            (item.contract.LoaiTaiSan || '').toLowerCase().includes(search) ||
+            (item.contract.SoKhung || '').toLowerCase().includes(search) ||
+            (item.contract.SoMay || '').toLowerCase().includes(search)
           );
         }
         // Apply customer filter (the UI for this is rendered inside the "Khách Hàng" <th>)
@@ -5191,6 +5223,7 @@ const DEFAULT_CAPITAL_SOURCES = [
               <td class="p-2 font-mono text-xs text-slate-400 text-center font-bold">${idx + 1}</td>
               <td class="p-2 font-bold text-slate-800 text-xs">${contract.MaHopDong}</td>
               <td class="p-2 font-semibold text-slate-900 text-xs">${custName}</td>
+              <td class="p-2 text-xs">${formatTaiSanHopDongHTML(contract)}</td>
               <td class="p-2 text-slate-600 text-xs">${formatDate(contract.NgayVay)}</td>
               <td class="p-2 text-slate-600 text-xs">${formatDate(calc.ngayDongLaiGanNhat)}</td>
               <td class="p-2 text-indigo-700 text-xs font-extrabold bg-indigo-50/40">${formatDate(calc.ngayVaySauDaoStr)}</td>
@@ -5212,7 +5245,7 @@ const DEFAULT_CAPITAL_SOURCES = [
               <td class="p-2 text-center"><button onclick="window.openPaymentModal && window.openPaymentModal('${contract.MaHopDong}')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold">Thu</button><button onclick="window.openContractModal && window.openContractModal('${contract.MaHopDong}')" class="text-indigo-600 hover:text-indigo-800 font-semibold ml-1 text-xs">Sửa</button><button onclick="window.handleDeleteContract && window.handleDeleteContract('${contract.MaHopDong}')" class="text-rose-600 hover:text-rose-800 font-semibold ml-1 text-xs">Xóa</button></td>
             </tr>`;
         });
-        mainContentHTML = `${conLaiBanner}<div class="bg-white rounded-2xl border border-slate-100 overflow-x-auto shadow-sm"><table class="w-full text-sm text-left"><thead><tr class="bg-slate-50 border-b text-slate-400 font-bold"><th class="p-2 uppercase text-xs">STT</th><th class="p-2 uppercase">Mã HĐ</th><th class="p-2 uppercase text-xs">Khách Hàng <span class="inline-block align-middle">${khFilterHTML}</span></th><th class="p-2 uppercase text-xs">Ngày vay</th><th class="p-2 uppercase text-xs">TT gần nhất</th><th class="p-2 uppercase text-xs text-indigo-700 bg-indigo-50/70 font-extrabold rounded-t">Ngày vay sau đáo</th><th class="p-2 uppercase text-xs">Đến hạn</th><th class="p-2 text-right uppercase">Số vay</th><th class="p-2 text-right uppercase text-xs">Lãi Ngày / 1 Triệu (VNĐ) *</th><th class="p-2 uppercase">Timeline nguồn vốn (tự chia)</th><th class="p-2 text-right uppercase text-xs">Lãi 1 tháng (30d)</th><th class="p-2 text-right uppercase">Lãi còn nợ</th><th class="p-2 text-center uppercase">Thao tác</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+        mainContentHTML = `${conLaiBanner}<div class="bg-white rounded-2xl border border-slate-100 overflow-x-auto shadow-sm"><table class="w-full text-sm text-left"><thead><tr class="bg-slate-50 border-b text-slate-400 font-bold"><th class="p-2 uppercase text-xs">STT</th><th class="p-2 uppercase">Mã HĐ</th><th class="p-2 uppercase text-xs">Khách Hàng <span class="inline-block align-middle">${khFilterHTML}</span></th><th class="p-2 uppercase text-xs text-indigo-600">Thông tin HĐ vay</th><th class="p-2 uppercase text-xs">Ngày vay</th><th class="p-2 uppercase text-xs">TT gần nhất</th><th class="p-2 uppercase text-xs text-indigo-700 bg-indigo-50/70 font-extrabold rounded-t">Ngày vay sau đáo</th><th class="p-2 uppercase text-xs">Đến hạn</th><th class="p-2 text-right uppercase">Số vay</th><th class="p-2 text-right uppercase text-xs">Lãi Ngày / 1 Triệu (VNĐ) *</th><th class="p-2 uppercase">Timeline nguồn vốn (tự chia)</th><th class="p-2 text-right uppercase text-xs">Lãi 1 tháng (30d)</th><th class="p-2 text-right uppercase">Lãi còn nợ</th><th class="p-2 text-center uppercase">Thao tác</th></tr></thead><tbody>${rows}</tbody></table></div>`;
       }
       else if (state.activeTab === 'payments') {
         let rows = '';
